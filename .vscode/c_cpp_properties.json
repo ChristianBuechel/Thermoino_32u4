@@ -5,8 +5,7 @@
             "name": "Arduino",
             "compilerPath": "C:\\Users\\buechel\\AppData\\Local\\Arduino15\\packages\\arduino\\tools\\avr-gcc\\7.3.0-atmel3.6.1-arduino7\\bin\\avr-g++",
             "compilerArgs": [
-                "-Wall",
-                "-Wextra",
+                "-w",
                 "-std=gnu++11",
                 "-fpermissive",
                 "-fno-exceptions",
@@ -31,7 +30,7 @@
             "cppStandard": "c++11",
             "defines": [
                 "F_CPU=16000000L",
-                "ARDUINO=10819",
+                "ARDUINO=10607",
                 "ARDUINO_AVR_LEONARDO",
                 "ARDUINO_ARCH_AVR",
                 "USB_VID=0x2341",

@@ -1,3 +1,4 @@
+#line 1 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
 
 //***********************************************************************************
 //*********** defines
@@ -187,6 +188,87 @@ SerialCommand s_cmd; // The demo SerialCommand object
 //*********** Initialize
 //***********************************************************************************
 
+#line 190 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void setup();
+#line 264 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void loop();
+#line 273 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processSETID();
+#line 295 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processGETID();
+#line 303 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processVER();
+#line 309 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processDIAG();
+#line 317 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processDEBUG();
+#line 341 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processD188();
+#line 383 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processMOVE();
+#line 425 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processSTART();
+#line 439 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processSHOCK();
+#line 518 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processGETTIME();
+#line 524 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processHELP();
+#line 530 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processINITCTC();
+#line 571 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processLOADCTC();
+#line 622 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processQUERYCTC();
+#line 665 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processEXECCTC();
+#line 739 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processFLUSHCTC();
+#line 751 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processSTATUS();
+#line 764 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processSTATUS_D();
+#line 776 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processSTATUS_T();
+#line 789 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processKILL();
+#line 816 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processKILL_D();
+#line 832 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void processKILL_T();
+#line 853 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void unrecognized(const char *command);
+#line 951 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void print_error(int8_t error_code);
+#line 964 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void print_ok(int8_t ok_code);
+#line 979 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+int freeRam();
+#line 990 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void displayStatusSerial();
+#line 1008 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void display_help();
+#line 1051 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void display_error_codes();
+#line 1072 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void reset_ctc();
+#line 1086 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void ramp_temp(int32_t ms);
+#line 1138 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void osp_setup(uint8_t which, int32_t prescaler);
+#line 1194 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void ramp_temp_prec(int32_t o_us);
+#line 1238 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void memset_volatile(volatile void *s, char c, size_t n);
+#line 1247 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+uint8_t bits_required(uint16_t n);
+#line 1259 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+void bs_init(BitStream *bs, volatile uint8_t *buf, uint16_t size_bytes, uint8_t bits);
+#line 1268 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+int bs_write(BitStream *bs, int16_t value);
+#line 1289 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
+int16_t bs_read(BitStream *bs);
+#line 190 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\Thermoino_32u4.ino"
 void setup()
 {
   busy_d = false;
@@ -900,7 +982,6 @@ ISR(TIMER1_OVF_vect) // for CTC
     busy_t = false;
     //n_ctc--; // get rid of the null pulse (so we can add pulses with loadctc)
     bs.bitpos = saved_pos; // reset bitpos to saved position (i.e. without zero pulse)
-    bs.count--; // remove the zero pulse from count
     return;
   }
 
@@ -1305,3 +1386,4 @@ int16_t bs_read(BitStream *bs)
     bs->bitpos += bs->bits;
     return (int16_t)raw;
 }
+

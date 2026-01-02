@@ -1,3 +1,4 @@
+#line 1 "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\FastIO.cpp"
 //
 // FastIO Library
 // Copyright (c) 2019 BitBank Software, Inc.

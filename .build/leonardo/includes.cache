@@ -1,0 +1,198 @@
+[
+  {
+    "added_include_path": "C:\\Users\\buechel\\AppData\\Local\\Arduino15\\internal\\arduino_avr_1.8.6_78e0815c6047bc54\\cores\\arduino"
+  },
+  {
+    "added_include_path": "C:\\Users\\buechel\\AppData\\Local\\Arduino15\\internal\\arduino_avr_1.8.6_78e0815c6047bc54\\variants\\leonardo"
+  },
+  {
+    "compile": {
+      "source_path": "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\.build\\leonardo\\sketch\\Thermoino_32u4.ino.cpp",
+      "object_path": "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\.build\\leonardo\\sketch\\Thermoino_32u4.ino.cpp.o",
+      "depfile_path": "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\.build\\leonardo\\sketch\\Thermoino_32u4.ino.cpp.d"
+    },
+    "compile_task": {
+      "args": [
+        "C:\\Users\\buechel\\AppData\\Local\\Arduino15\\internal\\arduino_avr-gcc_7.3.0-atmel3.6.1-arduino7_fc423089e09cfcab/bin/avr-g++",
+        "-c",
+        "-g",
+        "-Os",
+        "-w",
+        "-std=gnu++11",
+        "-fpermissive",
+        "-fno-exceptions",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-fno-threadsafe-statics",
+        "-Wno-error=narrowing",
+        "-flto",
+        "-w",
+        "-x",
+        "c++",
+        "-E",
+        "-CC",
+        "-mmcu=atmega32u4",
+        "-DF_CPU=16000000L",
+        "-DARDUINO=10607",
+        "-DARDUINO_AVR_LEONARDO",
+        "-DARDUINO_ARCH_AVR",
+        "-DUSB_VID=0x2341",
+        "-DUSB_PID=0x8036",
+        "-DUSB_MANUFACTURER=\"Unknown\"",
+        "-DUSB_PRODUCT=\"Arduino Leonardo\"",
+        "-IC:\\Users\\buechel\\AppData\\Local\\Arduino15\\internal\\arduino_avr_1.8.6_78e0815c6047bc54\\cores\\arduino",
+        "-IC:\\Users\\buechel\\AppData\\Local\\Arduino15\\internal\\arduino_avr_1.8.6_78e0815c6047bc54\\variants\\leonardo",
+        "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\.build\\leonardo\\sketch\\Thermoino_32u4.ino.cpp",
+        "-o",
+        "nul"
+      ]
+    }
+  },
+  {
+    "missing_include_h": "EEPROM.h"
+  },
+  {
+    "added_include_path": "C:\\Users\\buechel\\AppData\\Local\\Arduino15\\internal\\arduino_avr_1.8.6_78e0815c6047bc54\\libraries\\EEPROM\\src"
+  },
+  {
+    "compile": {
+      "source_path": "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\.build\\leonardo\\sketch\\Thermoino_32u4.ino.cpp",
+      "object_path": "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\.build\\leonardo\\sketch\\Thermoino_32u4.ino.cpp.o",
+      "depfile_path": "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\.build\\leonardo\\sketch\\Thermoino_32u4.ino.cpp.d"
+    },
+    "compile_task": {
+      "args": [
+        "C:\\Users\\buechel\\AppData\\Local\\Arduino15\\internal\\arduino_avr-gcc_7.3.0-atmel3.6.1-arduino7_fc423089e09cfcab/bin/avr-g++",
+        "-c",
+        "-g",
+        "-Os",
+        "-w",
+        "-std=gnu++11",
+        "-fpermissive",
+        "-fno-exceptions",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-fno-threadsafe-statics",
+        "-Wno-error=narrowing",
+        "-flto",
+        "-w",
+        "-x",
+        "c++",
+        "-E",
+        "-CC",
+        "-mmcu=atmega32u4",
+        "-DF_CPU=16000000L",
+        "-DARDUINO=10607",
+        "-DARDUINO_AVR_LEONARDO",
+        "-DARDUINO_ARCH_AVR",
+        "-DUSB_VID=0x2341",
+        "-DUSB_PID=0x8036",
+        "-DUSB_MANUFACTURER=\"Unknown\"",
+        "-DUSB_PRODUCT=\"Arduino Leonardo\"",
+        "-IC:\\Users\\buechel\\AppData\\Local\\Arduino15\\internal\\arduino_avr_1.8.6_78e0815c6047bc54\\cores\\arduino",
+        "-IC:\\Users\\buechel\\AppData\\Local\\Arduino15\\internal\\arduino_avr_1.8.6_78e0815c6047bc54\\variants\\leonardo",
+        "-IC:\\Users\\buechel\\AppData\\Local\\Arduino15\\internal\\arduino_avr_1.8.6_78e0815c6047bc54\\libraries\\EEPROM\\src",
+        "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\.build\\leonardo\\sketch\\Thermoino_32u4.ino.cpp",
+        "-o",
+        "nul"
+      ]
+    }
+  },
+  {
+    "missing_include_h": ""
+  },
+  {
+    "compile": {
+      "source_path": "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\.build\\leonardo\\sketch\\FastIO.cpp",
+      "object_path": "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\.build\\leonardo\\sketch\\FastIO.cpp.o",
+      "depfile_path": "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\.build\\leonardo\\sketch\\FastIO.cpp.d"
+    },
+    "compile_task": {
+      "args": [
+        "C:\\Users\\buechel\\AppData\\Local\\Arduino15\\internal\\arduino_avr-gcc_7.3.0-atmel3.6.1-arduino7_fc423089e09cfcab/bin/avr-g++",
+        "-c",
+        "-g",
+        "-Os",
+        "-w",
+        "-std=gnu++11",
+        "-fpermissive",
+        "-fno-exceptions",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-fno-threadsafe-statics",
+        "-Wno-error=narrowing",
+        "-flto",
+        "-w",
+        "-x",
+        "c++",
+        "-E",
+        "-CC",
+        "-mmcu=atmega32u4",
+        "-DF_CPU=16000000L",
+        "-DARDUINO=10607",
+        "-DARDUINO_AVR_LEONARDO",
+        "-DARDUINO_ARCH_AVR",
+        "-DUSB_VID=0x2341",
+        "-DUSB_PID=0x8036",
+        "-DUSB_MANUFACTURER=\"Unknown\"",
+        "-DUSB_PRODUCT=\"Arduino Leonardo\"",
+        "-IC:\\Users\\buechel\\AppData\\Local\\Arduino15\\internal\\arduino_avr_1.8.6_78e0815c6047bc54\\cores\\arduino",
+        "-IC:\\Users\\buechel\\AppData\\Local\\Arduino15\\internal\\arduino_avr_1.8.6_78e0815c6047bc54\\variants\\leonardo",
+        "-IC:\\Users\\buechel\\AppData\\Local\\Arduino15\\internal\\arduino_avr_1.8.6_78e0815c6047bc54\\libraries\\EEPROM\\src",
+        "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\.build\\leonardo\\sketch\\FastIO.cpp",
+        "-o",
+        "nul"
+      ]
+    }
+  },
+  {
+    "missing_include_h": ""
+  },
+  {
+    "compile": {
+      "source_path": "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\.build\\leonardo\\sketch\\SerialCommand.cpp",
+      "object_path": "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\.build\\leonardo\\sketch\\SerialCommand.cpp.o",
+      "depfile_path": "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\.build\\leonardo\\sketch\\SerialCommand.cpp.d"
+    },
+    "compile_task": {
+      "args": [
+        "C:\\Users\\buechel\\AppData\\Local\\Arduino15\\internal\\arduino_avr-gcc_7.3.0-atmel3.6.1-arduino7_fc423089e09cfcab/bin/avr-g++",
+        "-c",
+        "-g",
+        "-Os",
+        "-w",
+        "-std=gnu++11",
+        "-fpermissive",
+        "-fno-exceptions",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-fno-threadsafe-statics",
+        "-Wno-error=narrowing",
+        "-flto",
+        "-w",
+        "-x",
+        "c++",
+        "-E",
+        "-CC",
+        "-mmcu=atmega32u4",
+        "-DF_CPU=16000000L",
+        "-DARDUINO=10607",
+        "-DARDUINO_AVR_LEONARDO",
+        "-DARDUINO_ARCH_AVR",
+        "-DUSB_VID=0x2341",
+        "-DUSB_PID=0x8036",
+        "-DUSB_MANUFACTURER=\"Unknown\"",
+        "-DUSB_PRODUCT=\"Arduino Leonardo\"",
+        "-IC:\\Users\\buechel\\AppData\\Local\\Arduino15\\internal\\arduino_avr_1.8.6_78e0815c6047bc54\\cores\\arduino",
+        "-IC:\\Users\\buechel\\AppData\\Local\\Arduino15\\internal\\arduino_avr_1.8.6_78e0815c6047bc54\\variants\\leonardo",
+        "-IC:\\Users\\buechel\\AppData\\Local\\Arduino15\\internal\\arduino_avr_1.8.6_78e0815c6047bc54\\libraries\\EEPROM\\src",
+        "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4\\.build\\leonardo\\sketch\\SerialCommand.cpp",
+        "-o",
+        "nul"
+      ]
+    }
+  },
+  {
+    "missing_include_h": ""
+  }
+]

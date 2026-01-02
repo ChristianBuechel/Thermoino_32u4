@@ -1,5 +1,5 @@
 {
+    "port": "COM12",
     "board": "arduino:avr:leonardo",
-    "sketch": "Thermoino_32u4.ino",
-    "port": "COM12"
+    "sketch": "Thermoino_32u4.ino"
 }

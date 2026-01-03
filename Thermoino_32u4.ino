@@ -310,7 +310,7 @@ void processDIAG()
 // returns all available commands
 {
   displayStatusSerial();
-  Serial.print(F("Available commands:"));
+  Serial.println(F("Available commands:"));
   s_cmd.printCommands();
 }
 
@@ -553,6 +553,14 @@ void processINITCTC()
       bit_width = bits_required(ctc_bin_ms); // determine how many bits we need to store ctc_bin_ms
       bs_max_count = (uint16_t)((CTC_MAX_N * 8) / bit_width); // determine how many entries we can store given bit_width
       bs_init(&bs, ctc_data, sizeof(ctc_data), bit_width); // initialize bitstream
+          if (debug_mode > 0)
+    {
+      Serial.print(F("CTC bits:  "));
+      Serial.println(bit_width);
+      Serial.print(F("CTC max entries:  "));
+      Serial.println(bs_max_count);
+    }
+
     }
     else
     {

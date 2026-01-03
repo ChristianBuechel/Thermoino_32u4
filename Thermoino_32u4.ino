@@ -1026,6 +1026,7 @@ void display_help()
   Serial.println(F(" items"));
 
   Serial.println(F("QUERYCTC(;yy) - status of the ctc_data queue (yy=3 to get all entries)"));
+  Serial.println(F("MAXCTC        - returns max number of entries for CTC buffer based on bitwidth)"));
   Serial.println(F("EXECCTC       - execute ctc_data queue using precise PWM"));
   Serial.println(F("FLUSHCTC      - reset ctc and clear ctc_data queue"));
   Serial.println();

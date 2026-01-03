@@ -1,9 +1,0 @@
-{
-  "additionalFiles": "..\\..\\..,..\\..\\..,..\\..,..\\..,..\\..,..\\..,..\\..,..\\..",
-  "compiler.optimization_flags": "",
-  "customBuildProperties": "",
-  "fqbn": "arduino:avr:leonardo",
-  "hardwareFolders": "C:\\Users\\buechel\\AppData\\Local\\Arduino15\\internal\\arduino_avr_1.8.6_78e0815c6047bc54,C:\\Users\\buechel\\AppData\\Local\\Arduino15\\internal\\arduino_avr_1.8.6_78e0815c6047bc54",
-  "otherLibrariesFolders": "C:\\Users\\buechel\\Documents\\Arduino\\libraries",
-  "sketchLocation": "c:\\Users\\buechel\\Documents\\Arduino\\Thermoino_32u4"
-}

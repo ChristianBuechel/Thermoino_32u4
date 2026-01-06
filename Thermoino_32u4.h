@@ -27,3 +27,4 @@ bool check_range_abs(H *out, H value, H min, H max)
 	*out = value;
 	return true;
 }
+

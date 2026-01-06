@@ -16,10 +16,12 @@
 // clean up unused stuff
 // now using fastio.h for fast port access
 
+// Interestingly the whole thing also works for the 2560 so we can keep both in one codebase
+// However, we have changed a few pin definitions as FastIO cannot handle anything bigger than the PFx registers
+
 #include "Arduino.h"
 #include "Thermoino_32u4.h"
 #include "SerialCommand.h"
-#include "FastIO.h"
 #include <EEPROM.h>
 
 // use C preproc to generate enums and char arrays with the same content
@@ -66,28 +68,18 @@ enum ok_codes
 const char *ok_str[] = {OK_CODES};
 #undef C
 
-#define A 1 //
-#define B 2 //
+#define AA 1 //
+#define BB 2 //
 
-// TIMER1
-//  OC1A = GPIO port PB5 = Arduino Digital Pin D9 32u4 --> DOWN blue
-//  OC1B = GPIO port PB6 = Arduino Digital Pin D10 32u4 --> UP green
+// elegant macros to handle Port I/O https://stackoverflow.com/questions/25984587/atmel-c-pin-manipulation-macros
 
-// TIMER3
-// OC3A = GPIO port PC6 = Arduino	Digital pin D5 Leonardo  --> PWM shock
-#define SHOCK_PIN 0xC6 // Pin 5 OC3A
+#define _SET(type, name, bit) type##name |= _BV(bit)
+#define _CLEAR(type, name, bit) type##name &= ~_BV(bit)
 
-#define DOWN_PIN 0xB5 // Pin 9 OC1A
-#define UP_PIN 0xB6   // Pin 10 OC1B
+#define OUTPUT(pin) _SET(DDR, pin)
+#define HIGH(pin) _SET(PORT, pin)
+#define LOW(pin) _CLEAR(PORT, pin)
 
-#define START_PIN 0xD4 // Pin 4
-
-#define PIN188_0 0xF4 // Pin A3/D17
-#define PIN188_1 0xF5 // Pin A2/D16
-#define PIN188_2 0xF6 // Pin A1/D15
-#define PIN188_3 0xF7 // Pin A0/D14
-
-#define CTC_MAX_N 1000 // on the 32u4 we can only use 1000 bytes of SRAM
 // therefore we bit-pack the entries (see below)
 // given a max ctc_bin_ms of 500ms (10bit) we can define ctc_data of ~400s = 6.5min
 // using smaller ctc_bin_ms allows more entries
@@ -129,6 +121,40 @@ const char *ok_str[] = {OK_CODES};
 #define OSP1_INPROGRESS() (TCNT1 > 0)
 #define OSP3_INPROGRESS() (TCNT3 > 0)
 
+
+
+#if defined(__AVR_ATmega2560__)
+
+#define SHOCK_PIN E, 3     // Pin D5 OC3A
+#define DOWN_PIN B, 5      // Pin D11 OC1A
+#define UP_PIN B, 6        // Pin D12 OC1B
+#define START_PIN H, 4     // Pin D7
+#define D188_0_PIN F, 4    // Pin A4
+#define D188_1_PIN F, 5    // Pin A5
+#define D188_2_PIN F, 6    // Pin A6
+#define D188_3_PIN F, 7    // Pin A7
+
+#define CTC_MAX_N 2000 // on the 2560 we can easily use 2000 bytes of SRAM
+
+#elif defined(__AVR_ATmega32U4__) // Leonardo, Micro
+
+#define SHOCK_PIN C, 6    // Pin D5 OC3A
+#define DOWN_PIN B, 5     // Pin D9 OC1A
+#define UP_PIN B, 6       // Pin D10 OC1B
+
+#define START_PIN D, 4    // Pin D4
+#define D188_0_PIN F, 4   // Pin A3
+#define D188_1_PIN F, 5   // Pin A2
+#define D188_2_PIN F, 6   // Pin A1
+#define D188_3_PIN F, 7   // Pin A0
+
+#define CTC_MAX_N 1000 // on the 32u4 we can only use 1000 bytes of SRAM
+
+#else
+#error "Unsupported MCU"
+#endif
+
+
 //***********************************************************************************
 //*********** initialize global variables
 //***********************************************************************************
@@ -142,9 +168,6 @@ uint8_t bit_width;     // once we set ctc_bin_ms we can define how many bits we 
 uint16_t bs_max_count; // keep track of how many entries are stored in buffer
 uint16_t ctc_bin_ms;   // 0 to 500ms
 uint16_t saved_pos;    // if we need to save current position in bitstream
-
-volatile int32_t ctc_bin_ticks;
-volatile uint8_t ctc_data[CTC_MAX_N];
 
 typedef struct
 {
@@ -169,6 +192,9 @@ int32_t pulse_tick0;
 // complex variables
 SerialCommand s_cmd; // The demo SerialCommand object
 
+volatile int32_t ctc_bin_ticks;
+volatile uint8_t ctc_data[CTC_MAX_N];
+
 //***********************************************************************************
 //*********** Initialize
 //***********************************************************************************
@@ -178,25 +204,29 @@ void setup()
   busy_d = false;
   busy_t = false;
   debug_mode = 0;
+
   // setup pins
-  Fast_pinMode(SHOCK_PIN, OUTPUT);
-  Fast_digitalWrite(SHOCK_PIN, LOW);
 
-  Fast_pinMode(UP_PIN, OUTPUT);
-  Fast_digitalWrite(UP_PIN, LOW);
-  Fast_pinMode(DOWN_PIN, OUTPUT);
-  Fast_digitalWrite(DOWN_PIN, LOW);
-  Fast_pinMode(START_PIN, OUTPUT);
-  Fast_digitalWrite(START_PIN, LOW);
+  OUTPUT(SHOCK_PIN);
+  LOW(SHOCK_PIN);
 
-  Fast_pinMode(PIN188_0, OUTPUT);
-  Fast_digitalWrite(PIN188_0, LOW);
-  Fast_pinMode(PIN188_1, OUTPUT);
-  Fast_digitalWrite(PIN188_1, LOW);
-  Fast_pinMode(PIN188_2, OUTPUT);
-  Fast_digitalWrite(PIN188_2, LOW);
-  Fast_pinMode(PIN188_3, OUTPUT);
-  Fast_digitalWrite(PIN188_3, LOW);
+  OUTPUT(UP_PIN);
+  LOW(UP_PIN);
+
+  OUTPUT(DOWN_PIN);
+  LOW(DOWN_PIN);
+
+  OUTPUT(START_PIN);
+  LOW(START_PIN);
+
+  OUTPUT(D188_0_PIN);
+  LOW(D188_0_PIN);
+  OUTPUT(D188_1_PIN);
+  LOW(D188_1_PIN);
+  OUTPUT(D188_2_PIN);
+  LOW(D188_2_PIN);
+  OUTPUT(D188_3_PIN);
+  LOW(D188_3_PIN);
 
   // kill Timer1
   TCCR1B = 0; // Halt counter by setting clock select bits to 0 (No clock source).
@@ -342,10 +372,10 @@ void processD188()
       // now set D188 channel outputs
       uint8_t out = channel; //
       busy_d = true;
-      /*Fast_digitalWrite(PIN188_0, (out >> 0) & 1);
-      Fast_digitalWrite(PIN188_1, (out >> 1) & 1);
-      Fast_digitalWrite(PIN188_2, (out >> 2) & 1);
-      Fast_digitalWrite(PIN188_3, (out >> 3) & 1);*/
+      /*D188_0_SET((out >> 0) & 1);
+      D188_1_SET((out >> 1) & 1);
+      D188_2_SET((out >> 2) & 1);
+      D188_3_SET((out >> 3) & 1);*/
 
       out &= 0x0F;                         // ensure 0..15
       PORTF = (PORTF & 0x0F) | (out << 4); // very fast port write
@@ -416,9 +446,9 @@ void processSTART()
     print_error(ERR_BUSY);
     return;
   }
-  Fast_digitalWrite(START_PIN, HIGH);
+  HIGH(START_PIN);
   delay(40); // wait 40ms
-  Fast_digitalWrite(START_PIN, LOW);
+  LOW(START_PIN);
   print_ok(OK);
 }
 
@@ -477,7 +507,7 @@ void processSHOCK()
 
   // now prepare Timer3 for PWM
   cli(); // stop interrupts
-  Fast_digitalWrite(SHOCK_PIN, LOW);
+  LOW(SHOCK_PIN);
   // TCCR3A = 0; necessary?
   TCCR3B = 0; // same for TCCR3B
 
@@ -562,26 +592,33 @@ void processINITCTC()
 }
 
 void processMAXCTC()
-// add an item to the CTC
+// return the maximum number of entries in the CTC
 {
   char *arg;
-  int32_t move_ms, t_move_ms;
-
-  if ((busy_t) || (OSP1_INPROGRESS()))
+  uint16_t tmp, max_count, bin_ms;
+  uint8_t bitw;
+  arg = s_cmd.next(); // Get the next argument from the SerialCommand object buffer
+  if (arg != NULL)    // As long as it existed, take it
   {
-    print_error(ERR_BUSY);
+    tmp = atoi(arg);
+    if (check_range(&bin_ms, tmp, (uint16_t)1, (uint16_t)500))
+    {
+      bitw = bits_required(bin_ms);                   // determine how many bits we need to store ctc_bin_ms
+      max_count = (uint16_t)((CTC_MAX_N * 8) / bitw); // determine how many entries we can store given bit_width
+      Serial.println(max_count - 1);
+    }
+    else
+    {
+      print_error(ERR_CTC_BIN_WIDTH);
+      return;
+    }
+  }
+  else
+  {
+    print_error(ERR_NO_PARAM);
     return;
   }
-
-  if (ctc_bin_ms == 0) // not initialized
-  {
-    print_error(ERR_CTC_NOT_INIT);
-    reset_ctc();
-    return;
-  }
-  Serial.println(bs_max_count - 1);
 }
-
 void processLOADCTC()
 // add an item to the CTC
 {
@@ -641,16 +678,21 @@ void processQUERYCTC()
     print_error(ERR_BUSY);
     return;
   }
+  if (bs.count == 0) // no data
+  {
+    print_error(ERR_CTC_EMPTY);
+    return;
+  }
+  else
+  {
+    print_ok(OK);
+  }
+
   arg = s_cmd.next(); // Get the next argument from the SerialCommand object buffer
   if (arg != NULL)
     query_lvl = atoi(arg);
   else
     query_lvl = 1;
-
-  if ((query_lvl == 1) && (ctc_bin_ms > 0) && (bs.count > 0))
-  {
-    Serial.println(F("Status: READY"));
-  }
 
   if ((query_lvl == 2) && (bs.count > 0))
   {
@@ -699,8 +741,8 @@ void processEXECCTC()
   bs_write(&bs, 0); // add a zero pulse to the end to circumvent cut-off in ISR
 
   cli();
-  Fast_digitalWrite(UP_PIN, LOW);
-  Fast_digitalWrite(DOWN_PIN, LOW);
+  LOW(UP_PIN);
+  LOW(DOWN_PIN);
   TCCR1B = 0;            // Stop timer before configuring
   TIFR1 |= (1 << TOV1);  // very important as this is still set from EXECCTC (clear Timer/Counter1 Overflow Flag)
   TIMSK1 = (1 << TOIE1); // interrupt when TCNT1 overflows
@@ -798,8 +840,8 @@ void processKILL()
   TCNT1 = 0;
   TIMSK1 &= ~(1 << TOIE1); // disable interrupt
 
-  Fast_digitalWrite(DOWN_PIN, LOW); // set ports low
-  Fast_digitalWrite(UP_PIN, LOW);   //
+  LOW(DOWN_PIN);
+  LOW(UP_PIN);
   busy_t = false;
 
   // TIMER3 stuff (digitimer)
@@ -807,9 +849,9 @@ void processKILL()
   TCCR3B = 0;
 
   c_pulse = 0;
-  TCNT3 = 0;                         //
-  TIMSK3 &= ~(1 << TOIE3);           // can we disable interrupt when TCNT1 overflows in ISR ??? -> YES
-  Fast_digitalWrite(SHOCK_PIN, LOW); //
+  TCNT3 = 0;               //
+  TIMSK3 &= ~(1 << TOIE3); // can we disable interrupt when TCNT1 overflows in ISR ??? -> YES
+  LOW(SHOCK_PIN);
   busy_d = false;
   print_ok(OK_READY);
 }
@@ -823,9 +865,9 @@ void processKILL_D()
 
   // PORTE &= ~(1 << PE3); // probably not necessary set PE3 low
   c_pulse = 0;
-  TCNT3 = 0;                         //
-  TIMSK3 &= ~(1 << TOIE3);           // can we disable interrupt when TCNT1 overflows in ISR ??? -> YES
-  Fast_digitalWrite(SHOCK_PIN, LOW); //
+  TCNT3 = 0;               //
+  TIMSK3 &= ~(1 << TOIE3); // can we disable interrupt when TCNT1 overflows in ISR ??? -> YES
+  LOW(SHOCK_PIN);            //
   busy_d = false;
   print_ok(OK_READY);
 }
@@ -841,8 +883,8 @@ void processKILL_T()
   TCNT1 = 0;               // does not help to do a MOVE after EXECCTCPWM...
   TIMSK1 &= ~(1 << TOIE1); // can we disable interrupt when TCNT1 overflows in ISR ??? -> YES
 
-  Fast_digitalWrite(DOWN_PIN, LOW); //
-  Fast_digitalWrite(UP_PIN, LOW);   //
+  LOW(DOWN_PIN);
+  LOW(UP_PIN);
 
   busy_t = false;
 
@@ -869,10 +911,10 @@ ISR(TIMER1_COMPA_vect) // for slow ramping up/down
   {
     TCCR1A = 0;
     TCCR1B = 0;
-    TIMSK1 &= ~(1 << OCIE1A);         // can we disable interrupt  in ISR ??? -> YES
-    Fast_digitalWrite(DOWN_PIN, LOW); //
-    Fast_digitalWrite(UP_PIN, LOW);   //
-    TCNT1 = 0;                        // does not help to do a MOVE after EXECCTCPWM...
+    TIMSK1 &= ~(1 << OCIE1A); // can we disable interrupt  in ISR ??? -> YES
+    LOW(DOWN_PIN);
+    LOW(UP_PIN);
+    TCNT1 = 0;                // does not help to do a MOVE after EXECCTCPWM...
     busy_t = false;
   }
 }
@@ -889,10 +931,10 @@ ISR(TIMER1_OVF_vect) // for CTC
   {
     TCCR1A = 0; // clear all Timer/PWM functionality
     TCCR1B = 0;
-    Fast_digitalWrite(DOWN_PIN, LOW); //
-    Fast_digitalWrite(UP_PIN, LOW);   //
-    TCNT1 = 0;                        // does not help to do a MOVE after EXECCTCPWM...
-    TIMSK1 &= ~(1 << TOIE1);          // can we disable interrupt when TCNT1 overflows in ISR ??? -> YES
+    LOW(DOWN_PIN);             // set ports low
+    LOW(UP_PIN);               //
+    TCNT1 = 0;               // does not help to do a MOVE after EXECCTCPWM...
+    TIMSK1 &= ~(1 << TOIE1); // can we disable interrupt when TCNT1 overflows in ISR ??? -> YES
     busy_t = false;
     bs.bitpos = saved_pos; // reset bitpos to saved position (i.e. without zero pulse)
     bs.count--;            // remove the zero pulse from count
@@ -1101,7 +1143,7 @@ void ramp_temp(int32_t ms)
       Serial.print(F("Ramping down:  "));
       Serial.println(-ms);
     }
-    Fast_digitalWrite(DOWN_PIN, HIGH); //
+    HIGH(DOWN_PIN);
   }
   if (ms > 0)
   {
@@ -1110,7 +1152,7 @@ void ramp_temp(int32_t ms)
       Serial.print(F("Ramping up:  "));
       Serial.println(ms);
     }
-    Fast_digitalWrite(UP_PIN, HIGH); //
+    HIGH(UP_PIN);
   }
   TCCR1B |= (1 << CS11) | (1 << CS10); // start clock
   sei();
@@ -1129,12 +1171,12 @@ void osp_setup(uint8_t which, int32_t prescaler)
   // We break out of this by manually setting the TCNT higher than 0, in which case it will count all the way up to MAX
   // and then overflow back to 0 and get locked up again.
 
-  if (which == A)
+  if (which == AA)
   {
     OCR1A = 0xffff;
     TCCR1A = (1 << COM1A0) | (1 << COM1A1) | (1 << WGM11); // OC1A=Set on Match, clear on BOTTOM. Mode 14 Fast PWM. p.131
   }
-  else if (which == B)
+  else if (which == BB)
   {
     OCR1B = 0xffff;
     TCCR1A = (1 << COM1B0) | (1 << COM1B1) | (1 << WGM11); // OC1B=Set on Match, clear on BOTTOM. Mode 14 Fast PWM. p.131
@@ -1196,7 +1238,7 @@ void ramp_temp_prec(int32_t o_us) // specifiy in us
       Serial.print(F("Prescaler:  "));
       Serial.println(prescaler);
     }
-    osp_setup(A, prescaler);
+    osp_setup(AA, prescaler);
     OSP_SET_AND_FIRE_LONG_A(o_tic) //
   }
   else if (o_tic > 0)
@@ -1208,7 +1250,7 @@ void ramp_temp_prec(int32_t o_us) // specifiy in us
       Serial.print(F("Prescaler:  "));
       Serial.println(prescaler);
     }
-    osp_setup(B, prescaler);
+    osp_setup(BB, prescaler);
     OSP_SET_AND_FIRE_LONG_B(o_tic) //
   }
 }

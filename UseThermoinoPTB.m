@@ -255,16 +255,17 @@ switch lower(action)
         error(['INITCTC is obsolete use new LOADCTC to also init the CTC'])
         
         %-----------------------------------------------------------
-    case 'maxctc'  % UseThermoinoPTB('maxctc',Index) --> returns the # of possible CTC entries
-        % UseThermoinoPTB('maxctc') --> returns the # of possible CTC entries
+    case 'maxctc'  % UseThermoinoPTB('maxctc',period,Index) --> returns the # of possible CTC entries given period
+        % UseThermoinoPTB('maxctc',period) --> returns the # of possible CTC entries
         %-----------------------------------------------------------
-        if numel(varargin) == 1
-            ind = varargin{1};
+        period  = varargin{1};
+        if numel(varargin) == 2
+            ind = varargin{2};
         else
             ind = 1;
         end
         if ind <= numel(thermoino)
-            [resp, when] = mywriteread(thermoino(ind).handle,"MAXCTC");
+            [resp, when] = mywriteread(thermoino(ind).handle,sprintf('MAXCTC;%d',period));
             status = str2num(resp);
             if status > 0
                 varargout{1} = status;                
@@ -299,7 +300,7 @@ switch lower(action)
                 return;
             end
             
-            outCmd = sprintf('MAXCTC'); % see how many entries fit
+            outCmd = sprintf('MAXCTC;%d',round(period)); % see how many entries fit
             [resp, ~] = mywriteread(thermoino(ind).handle,outCmd);
             maxctc = str2num(resp);
             if numel(data) > maxctc, error(['A maximum of ' num2str(maxctc) ' pulses is allowed']);end

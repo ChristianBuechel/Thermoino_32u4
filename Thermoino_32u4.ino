@@ -12,12 +12,18 @@
 // The only real difference is that we have less SRAM (2560 has 8kB, 32u4 has 2.5kB)
 // This only gives about 500 CTC entries with 500ms bin width (vs 2500 on 2560)
 // To mitigate this we use a variable bit coding scheme so we could fit e.g. ~800 (10bit) entries in 2.5kB
-//
+// A new command MAXCTC allows to query how many entries fit for a given bin width
 // clean up unused stuff
 // now using fastio.h for fast port access
 
 // Interestingly the whole thing also works for the 2560 so we can keep both in one codebase
 // However, we have changed a few pin definitions as FastIO cannot handle anything bigger than the PFx registers
+
+// to make communication more robust we now always print 3 digit error/ok codes with leading zeros
+// should any command reveal additional info, we also print a 5 digit number that indicates how many datry bytes follow
+// that means that the 1st line of any response is either a 3 char error or OK code
+// the 2nd line contains 5digit to indicate the following payload size
+
 
 #include "Arduino.h"
 #include "Thermoino_32u4.h"

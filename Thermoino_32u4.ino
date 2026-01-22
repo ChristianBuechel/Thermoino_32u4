@@ -21,14 +21,14 @@
 
 // to make communication more robust we now always print 3 digit error/ok codes with leading zeros
 // should any command reveal additional info, we also print a 5 digit number that indicates how many datry bytes follow
-// that means that the 1st line of any response is either a 3 char error or OK code
+// that means that the 1st line of any response is either a 3 1char error or OK code
 // the 2nd line contains 5digit to indicate the following payload size
-
 
 #include "Arduino.h"
 #include "Thermoino_32u4.h"
 #include "SerialCommand.h"
 #include <EEPROM.h>
+#include "GP8403.h"
 
 // use C preproc to generate enums and char arrays with the same content
 #define ERROR_CODES      \
@@ -127,39 +127,36 @@ const char *ok_str[] = {OK_CODES};
 #define OSP1_INPROGRESS() (TCNT1 > 0)
 #define OSP3_INPROGRESS() (TCNT3 > 0)
 
-
-
 #if defined(__AVR_ATmega2560__)
 
-#define SHOCK_PIN E, 3     // Pin D5 OC3A
-#define DOWN_PIN B, 5      // Pin D11 OC1A
-#define UP_PIN B, 6        // Pin D12 OC1B
-#define START_PIN H, 4     // Pin D7
-#define D188_0_PIN F, 4    // Pin A4
-#define D188_1_PIN F, 5    // Pin A5
-#define D188_2_PIN F, 6    // Pin A6
-#define D188_3_PIN F, 7    // Pin A7
+#define SHOCK_PIN E, 3  // Pin D5 OC3A
+#define DOWN_PIN B, 5   // Pin D11 OC1A
+#define UP_PIN B, 6     // Pin D12 OC1B
+#define START_PIN H, 4  // Pin D7
+#define D188_0_PIN F, 4 // Pin A4
+#define D188_1_PIN F, 5 // Pin A5
+#define D188_2_PIN F, 6 // Pin A6
+#define D188_3_PIN F, 7 // Pin A7
 
 #define CTC_MAX_N 2000 // on the 2560 we can easily use 2000 bytes of SRAM
 
 #elif defined(__AVR_ATmega32U4__) // Leonardo, Micro
 
-#define SHOCK_PIN C, 6    // Pin D5 OC3A
-#define DOWN_PIN B, 5     // Pin D9 OC1A
-#define UP_PIN B, 6       // Pin D10 OC1B
+#define SHOCK_PIN C, 6 // Pin D5 OC3A
+#define DOWN_PIN B, 5  // Pin D9 OC1A
+#define UP_PIN B, 6    // Pin D10 OC1B
 
-#define START_PIN D, 4    // Pin D4
-#define D188_0_PIN F, 4   // Pin A3
-#define D188_1_PIN F, 5   // Pin A2
-#define D188_2_PIN F, 6   // Pin A1
-#define D188_3_PIN F, 7   // Pin A0
+#define START_PIN D, 4  // Pin D4
+#define D188_0_PIN F, 4 // Pin A3
+#define D188_1_PIN F, 5 // Pin A2
+#define D188_2_PIN F, 6 // Pin A1
+#define D188_3_PIN F, 7 // Pin A0
 
 #define CTC_MAX_N 1000 // on the 32u4 we can only use 1000 bytes of SRAM
 
 #else
 #error "Unsupported MCU"
 #endif
-
 
 //***********************************************************************************
 //*********** initialize global variables
@@ -196,7 +193,8 @@ int16_t pulse_ms0;
 int32_t pulse_tick0;
 
 // complex variables
-SerialCommand s_cmd; // The demo SerialCommand object
+SerialCommand s_cmd;           // The demo SerialCommand object
+GP8403 _gp8403 = GP8403(0x58); // create GP8403 object at default address
 
 volatile int32_t ctc_bin_ticks;
 volatile uint8_t ctc_data[CTC_MAX_N];
@@ -207,6 +205,11 @@ volatile uint8_t ctc_data[CTC_MAX_N];
 
 void setup()
 {
+  _gp8403.begin();
+  _gp8403.setVoltageRange(GP8403::V_10); // 0-10V Output
+  _gp8403.setOutput(GP8403::OUT_0, 0);   // 0 out_0
+  _gp8403.setOutput(GP8403::OUT_1, 0);   // 0 out_1
+
   busy_d = false;
   busy_t = false;
   debug_mode = 0;
@@ -258,6 +261,7 @@ void setup()
   s_cmd.addCommand("GETTIME", processGETTIME);
   s_cmd.addCommand("DEBUG", processDEBUG);
   s_cmd.addCommand("D188", processD188);
+  s_cmd.addCommand("SETV", processSETV);
   s_cmd.addCommand("HELP", processHELP);
   s_cmd.addCommand("INITCTC", processINITCTC);
   s_cmd.addCommand("LOADCTC", processLOADCTC);
@@ -387,6 +391,46 @@ void processD188()
       PORTF = (PORTF & 0x0F) | (out << 4); // very fast port write
 
       delay(1); // let relais settle
+      busy_d = false;
+    }
+
+    else
+    {
+      print_error(ERR_CHANNEL_RANGE);
+      return;
+    }
+  }
+  else
+  {
+    print_error(ERR_NO_PARAM);
+    return;
+  }
+}
+
+void processSETV()
+// sets the volateg of the DA output 0 to a number in mV (0..10000)
+{
+  char *arg;
+  uint16_t New, voltage;
+  if ((busy_d) || (OSP3_INPROGRESS()))
+  {
+    print_error(ERR_BUSY);
+    return;
+  }
+
+  arg = s_cmd.next(); // Get the next argument from the SerialCommand object buffer
+  if (arg != NULL)    // if there is more, take it
+  {
+    New = atoi(arg);
+    if (check_range(&voltage, New, (uint16_t)0, (uint16_t)10000)) // voltage in mV
+    {
+      print_ok(OK);
+      // now set DA output
+      uint16_t out = (voltage * 4095UL) / 10000;
+      busy_d = true;
+      _gp8403.setOutput(GP8403::OUT_0, out);
+      _gp8403.setOutput(GP8403::OUT_1, out);
+      delay(1); // let DA settle
       busy_d = false;
     }
 
@@ -873,7 +917,7 @@ void processKILL_D()
   c_pulse = 0;
   TCNT3 = 0;               //
   TIMSK3 &= ~(1 << TOIE3); // can we disable interrupt when TCNT1 overflows in ISR ??? -> YES
-  LOW(SHOCK_PIN);            //
+  LOW(SHOCK_PIN);          //
   busy_d = false;
   print_ok(OK_READY);
 }
@@ -920,7 +964,7 @@ ISR(TIMER1_COMPA_vect) // for slow ramping up/down
     TIMSK1 &= ~(1 << OCIE1A); // can we disable interrupt  in ISR ??? -> YES
     LOW(DOWN_PIN);
     LOW(UP_PIN);
-    TCNT1 = 0;                // does not help to do a MOVE after EXECCTCPWM...
+    TCNT1 = 0; // does not help to do a MOVE after EXECCTCPWM...
     busy_t = false;
   }
 }
@@ -937,8 +981,8 @@ ISR(TIMER1_OVF_vect) // for CTC
   {
     TCCR1A = 0; // clear all Timer/PWM functionality
     TCCR1B = 0;
-    LOW(DOWN_PIN);             // set ports low
-    LOW(UP_PIN);               //
+    LOW(DOWN_PIN);           // set ports low
+    LOW(UP_PIN);             //
     TCNT1 = 0;               // does not help to do a MOVE after EXECCTCPWM...
     TIMSK1 &= ~(1 << TOIE1); // can we disable interrupt when TCNT1 overflows in ISR ??? -> YES
     busy_t = false;
@@ -1084,6 +1128,7 @@ void display_help()
   Serial.println(F("KILL_D        - stop activity of digitimer"));
   Serial.println(F("SHOCK;nn(;yy) - Digitimer stimuli number (nn) @interval 1100us OR additionally specify interval between pulses (yy) in us (>1000) "));
   Serial.println(F("D188;xx       - select D188 channel xx (1..8)"));
+  Serial.println(F("SETV;xx       - set DA output voltage xx (0..10000 mV)"));
 }
 
 void display_error_codes()

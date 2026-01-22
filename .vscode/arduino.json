@@ -1,6 +1,7 @@
 {
-    "port": "COM15",
-    "board": "pololu-a-star:avr:a-star32U4",
+    "port": "COM4",
+    "board": "arduino:avr:mega",
     "sketch": "Thermoino_32u4.ino",
-    "programmer": "avrisp"
+    "programmer": "arduinoisp",
+    "configuration": "cpu=atmega2560"
 }

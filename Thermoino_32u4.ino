@@ -801,9 +801,21 @@ void processEXECCTC()
   TCCR1A = (1 << COM1A1) + (1 << COM1B1) + (1 << WGM11);
   TCCR1B = (1 << WGM13); // normal mode, phase correct PWM ... don't start yet!
 
+  /* Possible edits for Fast PWM mode 14
+  // Fast PWM mode 14, ICR1 = TOP
+  TCCR1A = (1 << COM1A1) | (1 << COM1B1) | (1 << WGM11);
+  TCCR1B = (1 << WGM13) | (1 << WGM12);
+  */
+
   ctc_bin_ticks = SCK / 2 / PWMPRESCALER * (int32_t)ctc_bin_ms / 1000;
   ICR1 = ctc_bin_ticks + 1; // important to set this BEFORE OCR1A/B
   // +1 hack to allow a pulse width equal ctc_bin_ms (actually ctc_bin_ms is 8 us longer)
+
+  /*
+  // compute TOP
+  ctc_bin_ticks = SCK / PWMPRESCALER * (int32_t)ctc_bin_ms / 1000;
+  ICR1 = ctc_bin_ticks;
+  */
 
   // get the first pulse
   bs.bitpos = 0;            // reset bitpos to beginning
@@ -823,6 +835,10 @@ void processEXECCTC()
 
   TCNT1 = ICR1 - 1; // Should not be zero, because then we will miss first entry as ISR "eats up" ctc_data value
   // ICR1-1 means low latency as OCR1A/B will be updated at ICR1
+  /*
+  TCNT1 = 0; //for fast PWM
+  */
+
   busy_t = true;
 
   TCCR1B |= (1 << CS10) | (1 << CS11); // Now start timer with prescaler 64 (max res 8us, max dur = 0xFFFF x 8 = 524ms)
@@ -993,6 +1009,9 @@ ISR(TIMER1_OVF_vect) // for CTC
 
   int16_t pulse_ms = bs_read(&bs);
   int32_t pulse_tick = SCK / 2 / PWMPRESCALER * (int32_t)pulse_ms / 1000;
+  
+  // ** FAST PWM: NO division by 2 ***
+  //  int32_t pulse_tick = (SCK / PWMPRESCALER) * (int32_t)pulse_ms / 1000;
 
   if (pulse_tick > 0)
   {

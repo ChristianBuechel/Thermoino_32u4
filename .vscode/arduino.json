@@ -1,5 +1,5 @@
 {
-    "port": "COM4",
+    "port": "COM11",
     "board": "arduino:avr:mega",
     "sketch": "Thermoino_32u4.ino",
     "programmer": "arduinoisp",

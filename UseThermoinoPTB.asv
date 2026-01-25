@@ -397,42 +397,28 @@ switch lower(action)
         % up slope
         t_uptime = (Ttarget - Tstart) ./ s_up * 1000;
         c_bin    = s_up/maxSlope * period;
-        data     = [data repmat(c_bin,1,floor(t_uptime/period)) repmat(rem(t_uptime,c_bin),1,rem(t_uptime,c_bin)>0)];
+        data     = [data repmat(c_bin,1,floor(t_uptime/c_bin)) repmat(rem(t_uptime,c_bin),1,rem(t_uptime,c_bin)>0)];
         % plateau
         data     = [data zeros(1,round(plateau*1000/period))];
         % down slope
         t_downtime = (Ttarget - Tstart) ./ s_down * 1000;
         c_bin    = s_down/maxSlope * period;
-        data     = [data repmat(-c_bin,1,floor(t_downtime/period)) repmat(-rem(t_downtime,c_bin),1,rem(t_downtime,c_bin)>0)];
+        data     = [data repmat(-c_bin,1,floor(t_downtime/c_bin)) repmat(-rem(t_downtime,c_bin),1,rem(t_downtime,c_bin)>0)];
         
         if ind <= numel(thermoino)
-            loadctc(period, round(data), ind);
+            loadctc(period, data, ind);
         else
             error(['Thermoino ' num2str(ind) ' does not exist'])
         end
-        %-----------------------------------------------------------
+        %-----------------------------------------------------------   
         
+                %-----------------------------------------------------------
+    case 'query' % UseThermoino('prepareramp', ramp, Index) --> prepare ramp
+        % UseThermoino('prepareramp')  --> prepare ramp using CTC
+        % ramp = [1 x 4 matrix with [rampspeed(°/s) plateau returnspeed(°/s) temperature(°C) CTCperiod]
+        % returns PTB time of start (or error string e.g. if busy)
         %-----------------------------------------------------------
-    case 'thermode_busy' % UseThermoino('thermode_busy', Index) --> returns 1 if thermode is busy
-        %-----------------------------------------------------------
-        if numel(varargin) == 1
-            ind     = varargin{1};
-        else
-            ind     = 1;
-        end
-        if ind <= numel(thermoino)
-            [resp, ~] = mywriteread(thermoino(ind).handle,'STATUS_T');
-            status = str2num(resp);
-            if (status<0) && (strcmp(ERRORMSG{abs(status)},'ERR_BUSY'))
-                varargout{1} = 1;
-            else
-                varargout{1} = 0;
-            end
-        else
-            error(['Thermoino ' num2str(ind) ' does not exist'])
-        end
-        %-----------------------------------------------------------
-        
+
     case 'kill' % closes all thermoino instances
         IOPort('CloseAll');
         clear global thermoino

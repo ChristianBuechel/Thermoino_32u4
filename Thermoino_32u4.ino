@@ -1,28 +1,27 @@
 
-// Thermoino_32_4 v 1.0 Port of Thermode_PWM to Atmel 32u4
+// Thermoino_32_4 v 4.0 Port of Thermode_PWM to Atmel 32u4 (runs also on 2560)
 // (C) Christian Büchel
-// Faster USB connectivity
+// Faster USB connectivity on the 2560
 // Allows for simple custom PCBs that can include optocouplers for Thermode outputs
 // Needed to reallocate the Timers as follows:
 
 // Timer1: All Thermode stuff PWM up/down, CTC
 // Timer3: Digitimer PWM shock
-// There was no real reason why slow ramp had to use Timer4, could also do this with Timer1
 
 // The only real difference is that we have less SRAM (2560 has 8kB, 32u4 has 2.5kB)
 // This only gives about 500 CTC entries with 500ms bin width (vs 2500 on 2560)
 // To mitigate this we use a variable bit coding scheme so we could fit e.g. ~800 (10bit) entries in 2.5kB
 // A new command MAXCTC allows to query how many entries fit for a given bin width
 // clean up unused stuff
-// now using fastio.h for fast port access
+// now using direct port access
 
-// Interestingly the whole thing also works for the 2560 so we can keep both in one codebase
+// Also works for the 2560 so we can keep both in one codebase
 // However, we have changed a few pin definitions as FastIO cannot handle anything bigger than the PFx registers
 
-// to make communication more robust we now always print 3 digit error/ok codes with leading zeros
-// should any command reveal additional info, we also print a 5 digit number that indicates how many datry bytes follow
-// that means that the 1st line of any response is either a 3 1char error or OK code
-// the 2nd line contains 5digit to indicate the following payload size
+// now includes code to handle the GP8403 DAC for voltage output
+
+// LOADCTC command now allows to repeat entries (as serial communication is slow on a 2560: 1500 entries take ~6s
+
 
 #include "Arduino.h"
 #include "Thermoino_32u4.h"
@@ -44,7 +43,8 @@
   C(ERR_SHOCK_ISI)       \
   C(ERR_BUSY)            \
   C(ERR_DEBUG_RANGE)     \
-  C(ERR_CHANNEL_RANGE)
+  C(ERR_CHANNEL_RANGE)   \
+  C(ERR_NO_DAC)
 
 #define C(x) x,
 enum error_codes
@@ -162,7 +162,7 @@ const char *ok_str[] = {OK_CODES};
 //*********** initialize global variables
 //***********************************************************************************
 
-const float SWversion = 3.5;
+const float SWversion = 4.0;
 
 int32_t cps, prescaler;
 uint8_t debug_mode;
@@ -195,7 +195,7 @@ int32_t pulse_tick0;
 // complex variables
 SerialCommand s_cmd;           // The demo SerialCommand object
 GP8403 _gp8403 = GP8403(0x58); // create GP8403 object at default address
-
+bool DAC_present;            // true if GP8403 found
 volatile int32_t ctc_bin_ticks;
 volatile uint8_t ctc_data[CTC_MAX_N];
 
@@ -205,7 +205,7 @@ volatile uint8_t ctc_data[CTC_MAX_N];
 
 void setup()
 {
-  _gp8403.begin();
+  DAC_present = _gp8403.begin();
   _gp8403.setVoltageRange(GP8403::V_10); // 0-10V Output
   _gp8403.setOutput(GP8403::OUT_0, 0);   // 0 out_0
   _gp8403.setOutput(GP8403::OUT_1, 0);   // 0 out_1
@@ -412,6 +412,12 @@ void processSETV()
 {
   char *arg;
   uint16_t New, voltage;
+  if (!DAC_present)
+  {
+    print_error(ERR_NO_DAC);
+    return;
+  }
+
   if ((busy_d) || (OSP3_INPROGRESS()))
   {
     print_error(ERR_BUSY);
@@ -424,12 +430,12 @@ void processSETV()
     New = atoi(arg);
     if (check_range(&voltage, New, (uint16_t)0, (uint16_t)10000)) // voltage in mV
     {
-      print_ok(OK);
       // now set DA output
       uint16_t out = (voltage * 4095UL) / 10000;
       busy_d = true;
       _gp8403.setOutput(GP8403::OUT_0, out);
       _gp8403.setOutput(GP8403::OUT_1, out);
+      print_ok(OK);
       delay(1); // let DA settle
       busy_d = false;
     }
@@ -673,7 +679,8 @@ void processLOADCTC()
 // add an item to the CTC
 {
   char *arg;
-  int32_t move_ms, t_move_ms;
+  int32_t myarg, t_move_ms;
+  uint16_t repeat = 1; // default: write once
 
   if ((busy_t) || (OSP1_INPROGRESS()))
   {
@@ -688,23 +695,12 @@ void processLOADCTC()
     return;
   }
 
-  if ((bs.bitpos / bs.bits) >= (bs_max_count - 1)) // we need at least one slot free for the ending zero pulse
-  {
-    print_error(ERR_CTC_FULL);
-    reset_ctc();
-    return;
-  }
   // get segment duration
   arg = s_cmd.next(); // Get the next argument from the SerialCommand object buffer
   if (arg != NULL)    // As long as it existed, take it
   {
-    move_ms = atol(arg);
-    if (check_range_abs(&t_move_ms, move_ms, (int32_t)0, (int32_t)ctc_bin_ms))
-    {
-      bs_write(&bs, t_move_ms);
-      print_ok(OK);
-    }
-    else
+    myarg = atol(arg);
+    if (!check_range_abs(&t_move_ms, myarg, (int32_t)0, (int32_t)ctc_bin_ms))
     {
       reset_ctc();
       print_error(ERR_CTC_PULSE_WIDTH);
@@ -715,6 +711,32 @@ void processLOADCTC()
   {
     print_error(ERR_NO_PARAM);
     return;
+  }
+
+  // get repeat count
+  arg = s_cmd.next(); // Get the next argument from the SerialCommand object buffer
+  if (arg != NULL)    // As long as it existed, take it
+  {
+    myarg = atol(arg);
+    if (!check_range(&repeat, (uint16_t)myarg, (uint16_t)1, bs_max_count))
+    {
+      print_error(ERR_CTC_FULL);
+      reset_ctc();
+      return;
+    }
+  }
+
+  if ((bs.bitpos / bs.bits) >= (bs_max_count - repeat)) // we need at least one slot free for the ending zero pulse
+  {
+    print_error(ERR_CTC_FULL);
+    reset_ctc();
+    return;
+  }
+
+  for (uint16_t r = 0; r < repeat; r++)
+  {
+    bs_write(&bs, t_move_ms);
+    print_ok(OK);
   }
 }
 
@@ -1009,7 +1031,7 @@ ISR(TIMER1_OVF_vect) // for CTC
 
   int16_t pulse_ms = bs_read(&bs);
   int32_t pulse_tick = SCK / 2 / PWMPRESCALER * (int32_t)pulse_ms / 1000;
-  
+
   // ** FAST PWM: NO division by 2 ***
   //  int32_t pulse_tick = (SCK / PWMPRESCALER) * (int32_t)pulse_ms / 1000;
 
@@ -1132,9 +1154,9 @@ void display_help()
   Serial.println(F("MOVE;XX       - Move temp up/down for XX us"));
   Serial.println(F("START         - Send 40ms TTL pulse to start thermode"));
   Serial.println(F("INITCTC;xx    - Initialize complex time courses (ctc_data) with cycle xx in ms (500 max)"));
-  Serial.print(F("LOADCTC;xx    - add pulse to ctc_data queue (xx in ms) -xx means temperature decrease, max "));
+    Serial.print(F("LOADCTC;xx;yy - add pulse to ctc_data queue (xx in ms) -xx means temperature decrease, max "));
   Serial.print(CTC_MAX_N);
-  Serial.println(F(" items"));
+  Serial.println(F(" items. yy=repeat count, default 1)"));
 
   Serial.println(F("QUERYCTC(;yy) - status of the ctc_data queue (yy=3 to get all entries)"));
   Serial.println(F("MAXCTC        - returns max number of entries for CTC buffer based on bitwidth)"));

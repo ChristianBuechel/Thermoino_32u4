@@ -1,59 +1,49 @@
-% Interface script for MEDOC thermodes, for use with arduino software v3.5 or higher.
-% [varargout] = UseThermoinoPTB(action,varargin)
-% ========
-% THERMODE
-% ========
-% UseThermoinoPTB('init',ComPort, BaselineTemp, RateOfRise)
-% creates a global struct array thermoino
-% all functions that use UseThermoinoPTB should declare this as global (global thermoino;)
-%
-% UseThermoinoPTB('id',Index) --> returns the name of thermoino Index
-% UseThermoinoPTB('id') --> returns the name of 1st thermoino
-%
-% UseThermoinoPTB('time',Index) --> returns the time (ms) of thermoino Index
-% UseThermoinoPTB('time') --> returns the time (ms) of 1st thermoino
-%
-% UseThermoinoPTB('trigger',Index) --> START thermoino Index
-% UseThermoinoPTB('trigger') --> START 1st thermoino
-% returns PTB time of start (or error string e.g. if busy)
-%
-% UseThermoinoPTB('move',dur,Index) --> MOVE (dur in �s) thermoino Index
-% UseThermoinoPTB('move',dur) --> MOVE (dur in �s) 1st thermoino
-% returns PTB time of start (or error string e.g. if busy)
-%
-% UseThermoinoPTB('set',TargetTemp,Index) --> MOVE thermoino Index to TargetTemp in �C
-% UseThermoinoPTB('set',TargetTemp) --> MOVE 1st thermoino to TargetTemp in �C
-% returns PTB time of start (or error string e.g. if busy)
-%
-% UseThermoinoPTB('loadctc',period,data,Index) --> uploads data to thermoino Index and sets period (all in ms)
-% UseThermoinoPTB('loadctc',period,data)  --> uploads data to 1st thermoino and sets period (all in ms)
-%
-% UseThermoinoPTB('queryctc',Index) --> read CTC data from thermoino Index
-% UseThermoinoPTB('queryctc') --> read CTC data from 1st thermoino
-% returns CTC data as a n x 2 matrix column 1: 0..n-1, column 2: data
-%
-% UseThermoinoPTB('execctc',Index) --> start CTC on thermoino Index
-% UseThermoinoPTB('execctc')  --> start CTC on 1st thermoino Index
-% returns PTB time of start (or error string e.g. if busy)
-%
-% UseThermoinoPTB('flushctc',Index) --> clear CTC data in thermoino Index
-% UseThermoinoPTB('flushctc')  --> clear CTC data in 1st thermoino
-% returns PTB time of start (or error string e.g. if busy)%%
-%
-%
-% =========
-% DIGITIMER
-% =========
-% UseThermoinoPTB('shock',nShocks,ISI, Index) --> apply nShocks with ISI (thermoino Index)
-% UseThermoinoPTB('shock',nShocks,ISI) --> apply nShocks with ISI (1st thermoino)
-% returns PTB time of start (or error string e.g. if busy)
 
 function [varargout] = UseThermoinoPTB(action,varargin)
+% UseThermoinoPTB  Interface to MEDOC thermodes using Thermoino firmware ≥ 4.0
+% This function provides a unified MATLAB interface for controlling one or more Thermoino based MEDOC thermodes 
+% via serial communication. All commands operate on a global struct array `thermoino`. 
+% If multiple thermodes are connected, commands default to the first device unless an explicit index is provided. 
+% All commands return their output via varargout: most commands return either a PTB timestamp or an error string; 
+% some return data matrices (e.g., queryctc).
+% INITIALIZATION:
+%   UseThermoinoPTB('init', ComPort, BaselineTemp, RateOfRise)  
+%   Initializes a new thermode connection and creates a new entry in the global `thermoino` array.
+%   If there is already a connected thermoide this one will get the next index (e.g. 2)
+% BASIC INFORMATION:
+%   UseThermoinoPTB('id', Index)    Returns the device ID string.
+%   UseThermoinoPTB('time', Index)  Returns the internal thermode time in milliseconds and the PTB timestamp of the reply.
+% TEMPERATURE CONTROL:
+%   UseThermoinoPTB('trigger', Index)  Starts the thermode at its baseline temperature. Returns PTB timestamp or error string.
+%   UseThermoinoPTB('move', Duration_us, Index)  Moves the thermode for the specified duration in microseconds. Returns PTB timestamp or error string.
+%   UseThermoinoPTB('set', TargetTemp, Index)    Moves the thermode to the specified temperature (°C). Returns PTB timestamp or error string.
+% DIGITIMER SHOCK CONTROL:
+%   UseThermoinoPTB('shock', nShocks, ISI_us, Index)  Triggers nShocks with the given inter‑shock interval (µs). Returns PTB timestamp or error string.
+% CTC CONTROL:
+%   UseThermoinoPTB('loadctc', Period_ms, Data, Index)   Uploads a run‑length‑compressed CTC sequence. Returns nothing; errors are thrown.
+%   UseThermoinoPTB('queryctc', Index)                   Reads back the currently loaded CTC data. Returns an n×2 matrix [index, value].
+%   UseThermoinoPTB('execctc', Index)                    Executes the loaded CTC sequence. Returns PTB timestamp or error string.
+%   UseThermoinoPTB('flushctc', Index)                   Clears all CTC data on the device. Returns PTB timestamp or error string.
+%   UseThermoinoPTB('maxctc', Period_ms, Index)          Returns the maximum number of CTC entries supported for the given period.
+% RAMP GENERATION:
+%   UseThermoinoPTB('prepareramp', RampVector, Index)  Generates and uploads a CTC ramp sequence. 
+%   RampVector = [riseSlope(°/s), plateau(s), returnSlope(°/s), targetTemp(°C), CTCperiod(ms)]. Returns approximate total ramp duration (s).
+% STATUS QUERIES:
+%   UseThermoinoPTB('thermode_busy', Index)  Returns 1 if the thermode is executing a command, otherwise 0.
+%   UseThermoinoPTB('digi_busy', Index)      Returns 1 if the digitimer is executing a shock sequence, otherwise 0.
+% SHUTDOWN:
+%   UseThermoinoPTB('kill')  Closes all serial ports and clears the global thermoino struct.
+% NOTES:
+%   Index optional (default 1). CTC data auto compressed. Internal temperature updated after MOVE/SET/CTC execution. 
+%   varargout always contains either a timestamp, a data matrix, or an error string depending on the command.
+% EXAMPLE:
+%   UseThermoinoPTB('init','COM5',32,8); --> open on COM5, base temp = 32°C, rate of rise (ror) set 8°/s
+%   UseThermoinoPTB('set',45); --> move temp to 45°C using the current ror
+%   UseThermoinoPTB('move',5000); --> ramp up temperature for 5000µs (at current ror) 
+%   UseThermoinoPTB('kill'); --> disconnect all thermoninos
 
-current_version = 3.50;
+current_version = 4.00;
 min_isi         = 1100; % 1100�s minimum shock ISI
-baudrate        = 115200;
-maxctc          = 2500;
 global thermoino; % make sure this is accessible everywhere
 
 % define some constants
@@ -71,19 +61,35 @@ ERRORMSG{end+1} = 'ERR_SHOCK_ISI';
 ERRORMSG{end+1} = 'ERR_BUSY';
 ERRORMSG{end+1} = 'ERR_DEBUG_RANGE';
 ERRORMSG{end+1} = 'ERR_CHANNEL_RANGE';
+ERRORMSG{end+1} = 'ERR_NO_DAC';
 
 switch lower(action)
     
     %-----------------------------------------------------------
-    case 'init' % UseThermoino('init',ComPort, BaselineTemp, RateOfRise)
+    case 'init' % UseThermoino('init',ComPort, BaselineTemp, RateOfRise, add)
         % creates a global struct array thermoino
         % all functions that use UseThermoino should declare this
         % as global (global thermoino;)
+        % if add == 1 the this connection will be added
+        % if add == 0 all connections will be closed and a new one will be
+        % established (default)
         %-----------------------------------------------------------
+        if numel(varargin) == 4
+            add = varargin{4};
+        else
+            add = 0;
+        end
+        if add ~= 1
+            IOPort('CloseAll');
+            clear global thermoino
+            global thermoino
+            thermoino = [];
+        end
+                
         oldverbosity = IOPort('Verbosity', 0);
         [h, errmsg] = IOPort('OpenSerialPort', varargin{1},'BaudRate=1200,DTR=1,RTS=1');
         if h >= 0
-            IOPort('Close', h); %OK Port exists and can be opened *** At the same time this resets the Leonardo
+            IOPort('Close', h); %OK Port exists and can be opened *** At the same time this resets the 32u4
         elseif isempty(strfind(errmsg, 'ENOENT'))
             error([varargin{1} ' is already open']);
         else
@@ -94,7 +100,6 @@ switch lower(action)
         WaitSecs(1);
         IOPort('Purge',s);
         IOPort('Flush',s);
-        
         ver = mywriteread(s,"VER",6);
         switch true
             case  str2num(ver) >= current_version % check for latest thermoino
@@ -120,106 +125,70 @@ switch lower(action)
     case 'time'  % UseThermoino('time',Index) --> returns the time (ms) of thermoino Index
         % UseThermoino('time') --> returns the time (ms) of 1st thermoino
         %-----------------------------------------------------------
-        if numel(varargin) == 1
-            ind = varargin{1};
-        else
-            ind = 1;
-        end
-        if ind <= numel(thermoino)
-            [resp, when] = mywriteread(thermoino(ind).handle,"GETTIME");
-            varargout{1} = str2num(resp);
-            varargout{2} = when;
-        else
-            error(['Thermoino ' num2str(ind) ' does not exist'])
-        end
-        
+        ind = get_index(varargin,1);
+        ind = validate_index(ind);
+        [resp, when] = mywriteread(thermoino(ind).handle,"GETTIME");
+        varargout{1} = str2num(resp);
+        varargout{2} = when;
         %-----------------------------------------------------------
     case 'id'  % UseThermoino('id',Index) --> returns the name of thermoino Index
         % UseThermoino('id') --> returns the name of 1st thermoino
         %-----------------------------------------------------------
-        if numel(varargin) == 1
-            ind = varargin{1};
-        else
-            ind = 1;
-        end
-        if ind <= numel(thermoino)
-            varargout{1} = mywriteread(thermoino(ind).handle,"GETID");
-        else
-            error(['Thermoino ' num2str(ind) ' does not exist'])
-        end
+        ind = get_index(varargin,1);
+        ind = validate_index(ind);
+        varargout{1} = mywriteread(thermoino(ind).handle,"GETID");
         %-----------------------------------------------------------
     case 'trigger' % UseThermoino('trigger',Index) --> START thermoino Index
         % UseThermoino('trigger') --> START 1st thermoino
         % returns PTB time of start (or error string e.g. if busy)
         %-----------------------------------------------------------
-        if numel(varargin) == 1
-            ind = varargin{1};
+        ind = get_index(varargin,1);
+        ind = validate_index(ind);
+        [resp, when] = mywriteread(thermoino(ind).handle,"START");
+        status = str2num(resp);
+        if status > 0
+            thermoino(ind).t = thermoino(ind).t_init; %temp back to where we started
+            varargout{1}     = when;
         else
-            ind = 1;
-        end
-        if ind <= numel(thermoino)
-            [resp, when] = mywriteread(thermoino(ind).handle,"START");
-            status = str2num(resp);
-            if status > 0
-                thermoino(ind).t = thermoino(ind).t_init; %temp back to where we started
-                varargout{1}     = when;
-            else
-                varargout{1} = ERRORMSG{abs(status)};
-            end
-        else
-            error(['Thermoino ' num2str(ind) ' does not exist'])
+            varargout{1} = ERRORMSG{abs(status)};
         end
         
         %-----------------------------------------------------------
-    case 'move' % UseThermoino('move',dur, Index) --> MOVE (dur in �s) thermoino Index
+    case 'move' % UseThermoino('move',dur, Index) --> MOVE (dur in µs) thermoino Index
         % UseThermoino('move',dur) --> MOVE (dur in �s) 1st thermoino
         % returns PTB time of start (or error string e.g. if busy)
         %-----------------------------------------------------------
         p_dur = varargin{1};
-        if numel(varargin) == 2
-            ind   = varargin{2};
+        ind = get_index(varargin,2);
+        ind = validate_index(ind);
+        
+        outCmd = sprintf('MOVE;%d',round(p_dur));
+        [resp, when] = mywriteread(thermoino(ind).handle,outCmd);
+        status = str2num(resp);
+        if status > 0
+            update_thermoino(ind,p_dur)
+            varargout{1} = when;
         else
-            ind = 1;
-        end
-        if ind <= numel(thermoino)
-            outCmd = sprintf('MOVE;%d',round(p_dur));
-            [resp, when] = mywriteread(thermoino(ind).handle,outCmd);
-            status = str2num(resp);
-            if status > 0
-                update_thermoino(ind,p_dur)
-                varargout{1} = when;
-            else
-                varargout{1} = ERRORMSG{abs(status)};
-            end
-        else
-            error(['Thermoino ' num2str(ind) ' does not exist'])
+            varargout{1} = ERRORMSG{abs(status)};
         end
         %-----------------------------------------------------------
-    case 'set'  % UseThermoino('set',TargetTemp, Index) --> MOVE thermoino Index to TargetTemp in �C
-        % UseThermoino('set',TargetTemp) --> MOVE 1st thermoino to TargetTemp in �C
+    case 'set'  % UseThermoino('set',TargetTemp, Index) --> MOVE thermoino Index to TargetTemp in °C
+        % UseThermoino('set',TargetTemp) --> MOVE 1st thermoino to TargetTemp in °C
         % returns PTB time of start (or error string e.g. if busy)
         %-----------------------------------------------------------
         target = varargin{1};
-        if numel(varargin) == 2 %just a temperature
-            ind    = varargin{2};
+        ind = get_index(varargin,2);
+        ind = validate_index(ind);
+        p_dur = ((target - thermoino(ind).t)./thermoino(ind).ror).*1e6;
+        outCmd = sprintf('MOVE;%d',round(p_dur));
+        [resp, when] = mywriteread(thermoino(ind).handle,outCmd);
+        status = str2num(resp);
+        if status > 0
+            update_thermoino(ind,p_dur)
+            varargout{1} = when;
         else
-            ind    = 1;
+            varargout{1} = ERRORMSG{abs(status)};
         end
-        if ind <= numel(thermoino)
-            p_dur = ((target - thermoino(ind).t)./thermoino(ind).ror).*1e6;
-            outCmd = sprintf('MOVE;%d',round(p_dur));
-            [resp, when] = mywriteread(thermoino(ind).handle,outCmd);
-            status = str2num(resp);
-            if status > 0
-                update_thermoino(ind,p_dur)
-                varargout{1} = when;
-            else
-                varargout{1} = ERRORMSG{abs(status)};
-            end
-        else
-            error(['Thermoino ' num2str(ind) ' does not exist'])
-        end
-        
         %-----------------------------------------------------------
     case 'shock'  % UseThermoino('shock', nShocks, ISI, Index) --> apply nShocks with ISI (thermoino Index)
         % UseThermoino('shock', nShocks, ISI) --> apply nShocks with ISI (1st thermoino)
@@ -227,52 +196,33 @@ switch lower(action)
         %-----------------------------------------------------------
         nShocks = varargin{1};
         isi     = varargin{2};
-        if numel(varargin) == 3
-            ind     = varargin{3};
-        else
-            ind     = 1;
-        end
+        ind = get_index(varargin,3);
+        ind = validate_index(ind);
         
-        if isi < min_isi, error(['Minimum ISI is ' num2str(min_isi) '�s']);end
+        if isi < min_isi, error(['Minimum ISI is ' num2str(min_isi) 'µs']);end
         
         outCmd = sprintf('SHOCK;%d;%d\n',round(nShocks),round(isi));
-        if ind <= numel(thermoino)
-            [resp, when] = mywriteread(thermoino(ind).handle,outCmd);
-            status = str2num(resp);
-            if status > 0
-                varargout{1} = when;
-            else
-                varargout{1} = ERRORMSG{abs(status)};
-            end
+        [resp, when] = mywriteread(thermoino(ind).handle,outCmd);
+        status = str2num(resp);
+        if status > 0
+            varargout{1} = when;
         else
-            error(['Thermoino ' num2str(ind) ' does not exist'])
+            varargout{1} = ERRORMSG{abs(status)};
         end
-        
-        %-----------------------------------------------------------
-    case 'initctc' %
-        %-----------------------------------------------------------
-        error(['INITCTC is obsolete use new LOADCTC to also init the CTC'])
         
         %-----------------------------------------------------------
     case 'maxctc'  % UseThermoinoPTB('maxctc',period,Index) --> returns the # of possible CTC entries given period
         % UseThermoinoPTB('maxctc',period) --> returns the # of possible CTC entries
         %-----------------------------------------------------------
         period  = varargin{1};
-        if numel(varargin) == 2
-            ind = varargin{2};
+        ind = get_index(varargin,2);
+        ind = validate_index(ind);
+        [resp, ~] = mywriteread(thermoino(ind).handle,sprintf('MAXCTC;%d',period));
+        status = str2num(resp);
+        if status > 0
+            varargout{1} = status;
         else
-            ind = 1;
-        end
-        if ind <= numel(thermoino)
-            [resp, when] = mywriteread(thermoino(ind).handle,sprintf('MAXCTC;%d',period));
-            status = str2num(resp);
-            if status > 0
-                varargout{1} = status;
-            else
-                varargout{1} = ERRORMSG{abs(status)};
-            end
-        else
-            error(['Thermoino ' num2str(ind) ' does not exist'])
+            varargout{1} = ERRORMSG{abs(status)};
         end
         
         %-----------------------------------------------------------
@@ -281,69 +231,47 @@ switch lower(action)
         %-----------------------------------------------------------
         period  = varargin{1};
         data    = varargin{2};
-        if numel(varargin) == 3
-            ind     = varargin{3};
-        else
-            ind     = 1;
-        end
+        ind = get_index(varargin,3);
+        ind = validate_index(ind);
         
-        
-        if ind <= numel(thermoino)
-            loadctc(period,data,ind);
-        else
-            error(['Thermoino ' num2str(ind) ' does not exist'])
-        end
+        loadctc(period,data(:),ind);
         %-----------------------------------------------------------
     case 'queryctc' % UseThermoino('queryctc', Index) --> read CTC data from thermoino Index
         % UseThermoino('queryctc') --> read CTC data from 1st thermoino
         % returns CTC data as a n x 2 matrix column 1: 0..n-1, column 2: data
         %-----------------------------------------------------------
-        if numel(varargin) == 1
-            ind     = varargin{1};
-        else
-            ind     = 1;
-        end
-        if ind <= numel(thermoino)
-            [resp, when] = mywriteread(thermoino(ind).handle,'QUERYCTC;3',3);
-            status = str2num(resp);
-            if status > 0
-                % now we start reading the data
-                data = [];
+        ind = get_index(varargin,1);
+        ind = validate_index(ind);
+        [resp, when] = mywriteread(thermoino(ind).handle,'QUERYCTC;3',3);
+        status = str2num(resp);
+        if status > 0
+            % now we start reading the data
+            data = [];
+            a = IOPort('BytesAvailable',thermoino(ind).handle);
+            while a>0
+                data = [data IOPort('Read', thermoino(ind).handle)];
+                pause(0.01);
                 a = IOPort('BytesAvailable',thermoino(ind).handle);
-                while a>0
-                    data = [data IOPort('Read', thermoino(ind).handle)];
-                    pause(0.01);
-                    a = IOPort('BytesAvailable',thermoino(ind).handle);
-                end
-                varargout{1} = str2num(char(data));
-            else
-                varargout{1} = ERRORMSG{abs(status)};
             end
+            varargout{1} = str2num(char(data));
         else
-            error(['Thermoino ' num2str(ind) ' does not exist'])
+            varargout{1} = ERRORMSG{abs(status)};
         end
         %-----------------------------------------------------------
     case {'execctc','startramp'} % UseThermoino('execctc', Index) --> start CTC on thermoino Index
         % UseThermoino('execctc')  --> start CTC on 1st thermoino Index
         % returns PTB time of start (or error string e.g. if busy)
         %-----------------------------------------------------------
-        if numel(varargin) == 1
-            ind     = varargin{1};
+        ind = get_index(varargin,1);
+        ind = validate_index(ind);
+        [resp, when] = mywriteread(thermoino(ind).handle,'EXECCTC');
+        status = str2num(resp);
+        if status > 0
+            varargout{1} = when;
+            p_dur = sum(thermoino(ind).ctc)*1e3; %in µs
+            update_thermoino(ind,p_dur)
         else
-            ind     = 1;
-        end
-        if ind <= numel(thermoino)
-            [resp, when] = mywriteread(thermoino(ind).handle,'EXECCTC');
-            status = str2num(resp);
-            if status > 0
-                varargout{1} = when;
-                p_dur = sum(thermoino(ind).ctc)*1e3; %in �s
-                update_thermoino(ind,p_dur)
-            else
-                varargout{1} = ERRORMSG{abs(status)};
-            end
-        else
-            error(['Thermoino ' num2str(ind) ' does not exist'])
+            varargout{1} = ERRORMSG{abs(status)};
         end
         
         %-----------------------------------------------------------
@@ -352,37 +280,27 @@ switch lower(action)
         % returns PTB time of start (or error string e.g. if busy)
         %-----------------------------------------------------------
         
-        if numel(varargin) == 1
-            ind     = varargin{1};
+        ind = get_index(varargin,1);
+        ind = validate_index(ind);
+        [resp, when] = mywriteread(thermoino(ind).handle,'FLUSHCTC');
+        status = str2num(resp);
+        if status > 0
+            varargout{1} = when;
+            thermoino(ind).ctc    = [];
+            thermoino(ind).period = [];
         else
-            ind     = 1;
-        end
-        if ind <= numel(thermoino)
-            [resp, when] = mywriteread(thermoino(ind).handle,'FLUSHCTC');
-            status = str2num(resp);
-            if status > 0
-                varargout{1} = when;
-                thermoino(ind).ctc    = [];
-                thermoino(ind).period = [];
-            else
-                varargout{1} = ERRORMSG{abs(status)};
-            end
-        else
-            error(['Thermoino ' num2str(ind) ' does not exist'])
+            varargout{1} = ERRORMSG{abs(status)};
         end
         %-----------------------------------------------------------
     case 'prepareramp' % UseThermoino('prepareramp', ramp, Index) --> prepare ramp
         % UseThermoino('prepareramp')  --> prepare ramp using CTC
-        % ramp = [1 x 4 matrix with [rampspeed(°/s) plateau returnspeed(°/s) temperature(°C) CTCperiod]
-        % returns PTB time of start (or error string e.g. if busy)
+        % ramp = [1 x 4 matrix with [rampspeed(°/s) plateau(s) returnspeed(°/s) plateau_temperature(°C) CTCperiod]
+        % returns the time in second the total sequence will roughly take
+        % due to some overhead it will take ususally a few hundred ms longer
         %-----------------------------------------------------------
         
         ramp  = varargin{1};
-        if numel(varargin) == 2
-            ind = varargin{2};
-        else
-            ind = 1;
-        end
+        ind   = get_index(varargin,2);
         
         Tstart      = thermoino(ind).t_init;
         maxSlope    = thermoino(ind).ror;
@@ -395,30 +313,48 @@ switch lower(action)
         data        = [];
         
         % up slope
-        t_uptime = (Ttarget - Tstart) ./ s_up * 1000;
-        c_bin    = s_up/maxSlope * period;
-        data     = [data repmat(c_bin,1,floor(t_uptime/c_bin)) repmat(rem(t_uptime,c_bin),1,rem(t_uptime,c_bin)>0)];
+        t_movtime = (Ttarget - Tstart)./maxSlope * 1000;
+        u_bin    = s_up/maxSlope*period;
+        data     = [data repmat(u_bin,1,floor(t_movtime/period)) repmat(rem(t_movtime,u_bin),1,rem(t_movtime,u_bin)>0)];
         % plateau
         data     = [data zeros(1,round(plateau*1000/period))];
         % down slope
-        t_downtime = (Ttarget - Tstart) ./ s_down * 1000;
-        c_bin    = s_down/maxSlope * period;
-        data     = [data repmat(-c_bin,1,floor(t_downtime/c_bin)) repmat(-rem(t_downtime,c_bin),1,rem(t_downtime,c_bin)>0)];
+        d_bin    = s_down/maxSlope*period;
+        data     = [data repmat(-d_bin,1,floor(t_movtime/period)) repmat(-rem(t_movtime,d_bin),1,rem(t_movtime,d_bin)>0)];
         
         if ind <= numel(thermoino)
-            loadctc(period, data, ind);
+            loadctc(period, round_zero(data'), ind);
+            varargout{1} = size(data,2)*period/1000; % approx time of ramp in s
         else
             error(['Thermoino ' num2str(ind) ' does not exist'])
         end
-        %-----------------------------------------------------------   
         
-                %-----------------------------------------------------------
-    case 'query' % UseThermoino('prepareramp', ramp, Index) --> prepare ramp
-        % UseThermoino('prepareramp')  --> prepare ramp using CTC
-        % ramp = [1 x 4 matrix with [rampspeed(°/s) plateau returnspeed(°/s) temperature(°C) CTCperiod]
-        % returns PTB time of start (or error string e.g. if busy)
         %-----------------------------------------------------------
-
+    case 'thermode_busy' % UseThermoino('thermode_busy', Index) --> returns 1 if thermode is busy
+        %-----------------------------------------------------------
+        ind = get_index(varargin,1);
+        ind = validate_index(ind);
+        [resp, ~] = mywriteread(thermoino(ind).handle,'STATUS_T');
+        status = str2num(resp);
+        if (status<0) && (strcmp(ERRORMSG{abs(status)},'ERR_BUSY'))
+            varargout{1} = 1;
+        else
+            varargout{1} = 0;
+        end
+        %-----------------------------------------------------------
+        
+    case 'digi_busy' % UseThermoino('digi_busy', Index) --> returns 1 if digitimer is busy
+        %-----------------------------------------------------------
+        ind = get_index(varargin,1);
+        ind = validate_index(ind);
+        [resp, ~] = mywriteread(thermoino(ind).handle,'STATUS_D');
+        status = str2num(resp);
+        if (status<0) && (strcmp(ERRORMSG{abs(status)},'ERR_BUSY'))
+            varargout{1} = 1;
+        else
+            varargout{1} = 0;
+        end
+        %-----------------------------------------------------------
     case 'kill' % closes all thermoino instances
         IOPort('CloseAll');
         clear global thermoino
@@ -432,11 +368,17 @@ end
 function loadctc(period,data,ind)
 global thermoino
 
-maxperiod       = 500;
+maxperiod = 500;
+orig_data = data;
+% Run length compression
+idx    = [1; find(diff(data) ~= 0) + 1];
+values = data(idx);
+counts = diff([idx; numel(data) + 1]);
+data   = [values counts];
 
 if period > maxperiod, error([num2str(period) ' exceeds max period of ' num2str(maxperiod)]);end
-if any(abs(data)>period), error(['No pulse can be longer than the CTC period of ' num2str(period)]);end
-if any(~isInt(data)), error(['Only integers allowed']);end
+if any(abs(data(:,1))>period), error(['No pulse can be longer than the CTC period of ' num2str(period)]);end
+if any(~isInt(data(:))), error(['Only integers allowed']);end
 
 outCmd = sprintf('INITCTC;%d',round(period)); % we always initialize the CTC
 [resp, ~] = mywriteread(thermoino(ind).handle,outCmd);
@@ -448,19 +390,17 @@ end
 outCmd = sprintf('MAXCTC;%d',round(period)); % see how many entries fit
 [resp, ~] = mywriteread(thermoino(ind).handle,outCmd);
 maxctc = str2num(resp);
-if numel(data) > maxctc, error(['A maximum of ' num2str(maxctc) ' pulses is allowed']);end
+if size(data,1) > maxctc, error(['A maximum of ' num2str(maxctc) ' pulses is allowed']);end
 
-for m = 1:numel(data)
-    outCmd = sprintf('LOADCTC;%d',data(m));
+for m = 1:size(data,1)
+    outCmd = sprintf('LOADCTC;%d;%d',data(m,1),data(m,2));
     [resp, ~] = mywriteread(thermoino(ind).handle,outCmd);
     if str2num(resp)<0
         error(ERRORMSG{abs(str2num(resp))});
         return; % takes about 8.3s for 2500 entries
     end
-    %[n, ~, ~, ~, ~, ~] = IOPort('Write', thermoino(ind).handle,sprintf('%s\r\n',outCmd)); %takes about 2.9s for 2500 entries
-    
 end
-thermoino(ind).ctc    = data(:);
+thermoino(ind).ctc    = orig_data(:);
 thermoino(ind).period = period;
 end
 
@@ -497,3 +437,48 @@ end
 function result = isInt(x)
 result = isfinite(x) & (x == floor(x));
 end
+
+function ind = get_index(args,which)
+if numel(args) == which
+    ind = args{which};   % last argument is always the index
+else
+    ind = 1;
+end
+end
+
+function ind = validate_index(ind)
+global thermoino
+if ind < 1 || ind > numel(thermoino)
+    error(['Thermoino ' num2str(ind) ' does not exist'])
+end
+end
+
+function c = round_zero(x)
+% makes sure that o
+r = round(x);
+err = -sum(r);
+if err == 0
+    c = r;
+    return
+end
+
+% fractional parts relative to rounding
+frac = x - r;
+% sort by how close they were to rounding the other way
+mask = (x ~= 0);
+
+% sort only the allowed indices
+allowedIdx = find(mask);
+[~, order] = sort(frac(allowedIdx), 'descend');
+idx = allowedIdx(order);
+c = r;
+if err > 0
+    % need to increase some elements
+    c(idx(1:err)) = c(idx(1:err)) + 1;
+else
+    % need to decrease some elements
+    c(idx(1:-err)) = c(idx(1:-err)) - 1;
+end
+end
+
+

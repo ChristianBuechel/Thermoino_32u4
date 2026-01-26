@@ -51,16 +51,16 @@ IOPort('Verbosity', oldverbosity);
 fprintf('\n\n');
 switch upper(cmd)
     case'ALL'
-        fprintf('These ports <strong>EXIST:</strong>\n')
+        fprintf('These ports EXIST:\n')
         for i=1:numel(allPorts)
             fprintf('%s\n',get_full_name(allPorts{i}));
         end
         fprintf('\nThese ports are <strong>AVAILABLE:</strong>\n')
         for i=1:numel(availPorts)
             fprintf('%s\n',get_full_name(allPorts{i}));
-        end        
+        end
+        
         out = allPorts;
-        fprintf('\nIf a port exists but is not available, this means another program is using it\n')
     case {'AVAILABLE','AVAIL'}
         out = availPorts;
     otherwise

@@ -1,30 +1,11 @@
-template <class H>
-bool check_range(H *out, H value, H min, H max)
+template <typename Out, typename In>
+bool check_r(Out* out, In value, In min, In max)
 {
-	if (value < min)
-	{
-		return false;
-	}
-	if (value > max)
-	{
-		return false;
-	}
-	*out = value;
-	return true;
-}
+    // Range check happens in the signed type (In)
+    if (value < min) return false;
+    if (value > max) return false;
 
-template <class H>
-bool check_range_abs(H *out, H value, H min, H max)
-{
-	if (abs(value) < min)
-	{
-		return false;
-	}
-	if (abs(value) > max)
-	{
-		return false;
-	}
-	*out = value;
-	return true;
+    // Only cast AFTER validation
+    *out = (Out)value;
+    return true;
 }
-

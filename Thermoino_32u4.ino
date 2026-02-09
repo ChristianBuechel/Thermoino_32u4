@@ -16,12 +16,12 @@
 // now using direct port access
 
 // Also works for the 2560 so we can keep both in one codebase
-// However, we have changed a few pin definitions as FastIO cannot handle anything bigger than the PFx registers
-
-// now includes code to handle the GP8403 DAC for voltage output
-
 // LOADCTC command now allows to repeat entries (as serial communication is slow on a 2560: 1500 entries take ~6s
 
+// now includes code to handle the GP8403 DAC for voltage output
+// v 4.1 also has a sequence mode to store and run up to 4 sequences of shocks (channel, voltage, n_stim, isi, wait)
+// rewritten TIMER3 ISR still uses phase-correct PWM, but now in inverted mode and # of pulses controlled by OCRA ISR
+// Digitimer pulses are now 8 or 16µs long
 
 #include "Arduino.h"
 #include "Thermoino_32u4.h"
@@ -44,7 +44,12 @@
   C(ERR_BUSY)            \
   C(ERR_DEBUG_RANGE)     \
   C(ERR_CHANNEL_RANGE)   \
-  C(ERR_NO_DAC)
+  C(ERR_NO_DAC)          \
+  C(ERR_VOLTAGE_RANGE)   \
+  C(ERR_SEQU_EMPTY)      \
+  C(ERR_SEQU_FULL)       \
+  C(ERR_SEQU_ITI)        \
+  C(ERR_MOVE_RANGE)
 
 #define C(x) x,
 enum error_codes
@@ -91,7 +96,7 @@ const char *ok_str[] = {OK_CODES};
 // using smaller ctc_bin_ms allows more entries
 
 #define DIGIHI_US 100       // pulse dur in  µs
-#define MIN_DIGI_ISI 1100   // in us
+#define MIN_DIGI_ISI 500   // in us
 #define MAX_DIGI_STIM 30000 // why not?
 #define MAX_DIGI_ISI 65000  // in us should allow freqeuncies down to 15 Hz
 
@@ -99,11 +104,13 @@ const char *ok_str[] = {OK_CODES};
 #define PWMPRESCALER 64 // prescaler for PWM mode
 
 #define MAX_OSP_TIME 4194240 // this is the longest in us the timer can do precisely. Then we switch to ms
-
+#define MAX_MOVE 30000000    // in µs, 30s is quite long ....
 // For prescaler = 8, 64, 256, 1024 use OSP_SET_AND_FIRE_LONG(cycles) instead. The "wait" time-waster makes it work!
 // #define wait {delayMicroseconds(2);} // Un-comment this for prescaler = 8
 // #define wait {delayMicroseconds(5);} // ...for prescaler = 64, make sure we get at least one clock
 // #define wait {delayMicroseconds(17);} // ...for prescaler = 256
+
+#define DAC_DEADTIME 1000 // in µs, time to wait after setting the DAC before firing shocks
 
 #define wait       \
   {                \
@@ -152,7 +159,7 @@ const char *ok_str[] = {OK_CODES};
 #define D188_2_PIN F, 6 // Pin A1
 #define D188_3_PIN F, 7 // Pin A0
 
-#define CTC_MAX_N 1000 // on the 32u4 we can only use 1000 bytes of SRAM
+#define CTC_MAX_N 700 // on the 32u4 we have to use less SRAM (a value of ~1000 crashes)
 
 #else
 #error "Unsupported MCU"
@@ -162,15 +169,32 @@ const char *ok_str[] = {OK_CODES};
 //*********** initialize global variables
 //***********************************************************************************
 
-const float SWversion = 4.0;
+const float SWversion = 4.1;
 
 int32_t cps, prescaler;
+int32_t New; // to be used for all atol calls
 uint8_t debug_mode;
 
 uint8_t bit_width;     // once we set ctc_bin_ms we can define how many bits we need
 uint16_t bs_max_count; // keep track of how many entries are stored in buffer
 uint16_t ctc_bin_ms;   // 0 to 500ms
 uint16_t saved_pos;    // if we need to save current position in bitstream
+
+bool DAC_present; // true if GP8403 found
+
+typedef struct
+{
+  uint8_t channel;     // D188 channel 0..8
+  uint16_t voltage_mV; // 0..10000 mV
+  uint16_t n_stim;     // number of shocks (0..65535)
+  uint16_t isi_us;     // inter-shock interval (0..65535 µs)
+  uint16_t wait_us;    // wait time AFTER this sequence (0..65535 µs)
+} StimSequence;
+
+#define MAX_SEQUENCES 4
+
+StimSequence sequ[MAX_SEQUENCES];
+uint8_t sequ_count = 0;
 
 typedef struct
 {
@@ -183,6 +207,8 @@ typedef struct
 } BitStream;
 
 BitStream bs;
+volatile int32_t ctc_bin_ticks;
+volatile uint8_t ctc_data[CTC_MAX_N];
 
 volatile int32_t count_down_ms;
 
@@ -192,12 +218,9 @@ volatile uint16_t n_pulse, c_pulse;
 int16_t pulse_ms0;
 int32_t pulse_tick0;
 
-// complex variables
+// objects
 SerialCommand s_cmd;           // The demo SerialCommand object
-GP8403 _gp8403 = GP8403(0x58); // create GP8403 object at default address
-bool DAC_present;            // true if GP8403 found
-volatile int32_t ctc_bin_ticks;
-volatile uint8_t ctc_data[CTC_MAX_N];
+GP8403 _gp8403 = GP8403(0x58); // create GP8403 object
 
 //***********************************************************************************
 //*********** Initialize
@@ -205,10 +228,15 @@ volatile uint8_t ctc_data[CTC_MAX_N];
 
 void setup()
 {
+
   DAC_present = _gp8403.begin();
+
+  //DAC_present = true; // for testing without DAC
+
   _gp8403.setVoltageRange(GP8403::V_10); // 0-10V Output
   _gp8403.setOutput(GP8403::OUT_0, 0);   // 0 out_0
-  _gp8403.setOutput(GP8403::OUT_1, 0);   // 0 out_1
+  //_gp8403.setOutput(GP8403::OUT_1, 0);   // 0 out_1
+
 
   busy_d = false;
   busy_t = false;
@@ -262,6 +290,10 @@ void setup()
   s_cmd.addCommand("DEBUG", processDEBUG);
   s_cmd.addCommand("D188", processD188);
   s_cmd.addCommand("SETV", processSETV);
+  s_cmd.addCommand("ADDSEQU", processADDSEQU);
+  s_cmd.addCommand("RUNSEQU", processRUNSEQU);
+  s_cmd.addCommand("QUERYSEQU", processQUERYSEQU);
+  s_cmd.addCommand("CLEARSEQU", processCLEARSEQU);
   s_cmd.addCommand("HELP", processHELP);
   s_cmd.addCommand("INITCTC", processINITCTC);
   s_cmd.addCommand("LOADCTC", processLOADCTC);
@@ -299,19 +331,22 @@ void processSETID()
   char *arg;
   char Buffer[16] = {0};
   arg = s_cmd.next(); // Get the next argument from the SerialCommand object buffer
-  if (arg != NULL)    // if there is more, take it
+  if (!arg)
   {
-    if (debug_mode > 1)
-    {
-      Serial.println(debug_mode);
-      strncpy(Buffer, arg, sizeof(Buffer) - 1);
-      Serial.println(Buffer);
-      EEPROM.put(0, Buffer);
-    }
-    else
-    {
-      Serial.println(F("Not authorized !")); // debug level needs to be 2
-    }
+    print_error(ERR_NO_PARAM);
+    return;
+  }
+
+  if (debug_mode > 1)
+  {
+    Serial.println(debug_mode);
+    strncpy(Buffer, arg, sizeof(Buffer) - 1);
+    Serial.println(Buffer);
+    EEPROM.put(0, Buffer);
+  }
+  else
+  {
+    Serial.println(F("Not authorized !")); // debug level needs to be 2
   }
 }
 
@@ -341,22 +376,18 @@ void processDEBUG()
 // sets the debug level i.e. verbosity level 2 allows to set a new name
 {
   char *arg;
-  uint8_t New;
   arg = s_cmd.next(); // Get the next argument from the SerialCommand object buffer
-  if (arg != NULL)    // if there is more, take it
-  {
-    New = atoi(arg);
-    if (check_range(&debug_mode, New, (uint8_t)0, (uint8_t)2)) // setting DEBUG to 2 allows to change the ID in EEprom
-      print_ok(OK);
-    else
-    {
-      print_error(ERR_DEBUG_RANGE);
-      return;
-    }
-  }
-  else
+  if (!arg)
   {
     print_error(ERR_NO_PARAM);
+    return;
+  }
+  New = atol(arg);
+  if (check_r<uint8_t, int32_t>(&debug_mode, New, 0, 2)) // setting DEBUG to 2 allows to change the ID in EEprom
+    print_ok(OK);
+  else
+  {
+    print_error(ERR_DEBUG_RANGE);
     return;
   }
 }
@@ -365,53 +396,42 @@ void processD188()
 // sets the Digitimer D188 channel outputs 1..8
 {
   char *arg;
-  uint8_t New, channel;
+  uint8_t channel;
   if ((busy_d) || (OSP3_INPROGRESS()))
   {
     print_error(ERR_BUSY);
     return;
   }
-
   arg = s_cmd.next(); // Get the next argument from the SerialCommand object buffer
-  if (arg != NULL)    // if there is more, take it
+  if (!arg)
   {
-    New = atoi(arg);
-    if (check_range(&channel, New, (uint8_t)0, (uint8_t)8)) // channel 1..8   0=off
-    {
-      print_ok(OK);
-      // now set D188 channel outputs
-      uint8_t out = channel; //
-      busy_d = true;
-      /*D188_0_SET((out >> 0) & 1);
-      D188_1_SET((out >> 1) & 1);
-      D188_2_SET((out >> 2) & 1);
-      D188_3_SET((out >> 3) & 1);*/
-
-      out &= 0x0F;                         // ensure 0..15
-      PORTF = (PORTF & 0x0F) | (out << 4); // very fast port write
-
-      delay(1); // let relais settle
-      busy_d = false;
-    }
-
-    else
-    {
-      print_error(ERR_CHANNEL_RANGE);
-      return;
-    }
+    print_error(ERR_NO_PARAM);
+    return;
+  }
+  New = atol(arg);
+  if (check_r<uint8_t, int32_t>(&channel, New, 0, 8)) // channel 1..8   0=off
+  {
+    print_ok(OK);
+    // now set D188 channel outputs
+    uint8_t out = channel; //
+    busy_d = true;
+    out &= 0x0F;                         // ensure 0..15
+    PORTF = (PORTF & 0x0F) | (out << 4); // very fast port write
+    delay(1);                            // let device settle
+    busy_d = false;
   }
   else
   {
-    print_error(ERR_NO_PARAM);
+    print_error(ERR_CHANNEL_RANGE);
     return;
   }
 }
 
 void processSETV()
-// sets the volateg of the DA output 0 to a number in mV (0..10000)
+// sets the voltage of the DA output 0 to a number in mV (0..10000)
 {
   char *arg;
-  uint16_t New, voltage;
+  uint16_t voltage;
   if (!DAC_present)
   {
     print_error(ERR_NO_DAC);
@@ -425,32 +445,206 @@ void processSETV()
   }
 
   arg = s_cmd.next(); // Get the next argument from the SerialCommand object buffer
-  if (arg != NULL)    // if there is more, take it
-  {
-    New = atoi(arg);
-    if (check_range(&voltage, New, (uint16_t)0, (uint16_t)10000)) // voltage in mV
-    {
-      // now set DA output
-      uint16_t out = (voltage * 4095UL) / 10000;
-      busy_d = true;
-      _gp8403.setOutput(GP8403::OUT_0, out);
-      _gp8403.setOutput(GP8403::OUT_1, out);
-      print_ok(OK);
-      delay(1); // let DA settle
-      busy_d = false;
-    }
-
-    else
-    {
-      print_error(ERR_CHANNEL_RANGE);
-      return;
-    }
-  }
-  else
+  if (!arg)
   {
     print_error(ERR_NO_PARAM);
     return;
   }
+  New = atol(arg);
+  if (check_r<uint16_t, int32_t>(&voltage, New, 0, 10000)) // voltage in mV
+  {
+    // now set DA output
+    uint16_t out = (voltage * 4095UL) / 10000;
+    busy_d = true;
+    _gp8403.setOutput(GP8403::OUT_0, out);
+    //_gp8403.setOutput(GP8403::OUT_1, out);
+    print_ok(OK);
+    delay(1); // let DA settle
+    busy_d = false;
+  }
+  else
+  {
+    print_error(ERR_VOLTAGE_RANGE);
+    return;
+  }
+}
+
+void processADDSEQU()
+{
+  if (!DAC_present)
+  {
+    print_error(ERR_NO_DAC);
+    return;
+  }
+
+  if (sequ_count >= MAX_SEQUENCES)
+  {
+    print_error(ERR_SEQU_FULL);
+    return;
+  }
+
+  StimSequence s;
+  char *arg;
+
+  // --- Parse channel ---
+  arg = s_cmd.next();
+  if (!arg)
+  {
+    print_error(ERR_NO_PARAM);
+    return;
+  }
+  New = atol(arg);
+  if (!check_r<uint8_t, int32_t>(&s.channel, New, 0, 8))
+  {
+    print_error(ERR_CHANNEL_RANGE);
+    return;
+  }
+
+  // --- Parse voltage ---
+  arg = s_cmd.next();
+  if (!arg)
+  {
+    print_error(ERR_NO_PARAM);
+    return;
+  }
+  New = atol(arg);
+  if (!check_r<uint16_t, int32_t>(&s.voltage_mV, New, 0, 10000))
+  {
+    print_error(ERR_VOLTAGE_RANGE);
+    return;
+  }
+
+  // --- Parse n_stim (uint16_t) ---
+  arg = s_cmd.next();
+  if (!arg)
+  {
+    print_error(ERR_NO_PARAM);
+    return;
+  }
+  New = atol(arg);
+  if (!check_r<uint16_t, int32_t>(&s.n_stim, New, 0, 65535))
+  {
+    print_error(ERR_SHOCK_RANGE);
+    return;
+  }
+
+  // --- Parse isi_us (uint16_t) ---
+  arg = s_cmd.next();
+  if (!arg)
+  {
+    print_error(ERR_NO_PARAM);
+    return;
+  }
+
+  New = atol(arg);
+  if (!check_r<uint16_t, int32_t>(&s.isi_us, New, MIN_DIGI_ISI, 65535))
+  {
+    print_error(ERR_SHOCK_ISI);
+    return;
+  }
+
+  // --- Parse wait_us (uint16_t) ---
+  arg = s_cmd.next();
+  if (!arg)
+  {
+    print_error(ERR_NO_PARAM);
+    return;
+  }
+
+  New = atol(arg);
+  if (!check_r<uint16_t, int32_t>(&s.wait_us, New, 0, 65535))
+  {
+    print_error(ERR_SEQU_ITI);
+    return;
+  }
+
+  // Only if we made it down here we Store the sequence entry
+  sequ[sequ_count++] = s;
+  print_ok(OK);
+}
+
+void processRUNSEQU()
+{
+  if (busy_d || OSP3_INPROGRESS())
+  {
+    print_error(ERR_BUSY);
+    return;
+  }
+
+  if (sequ_count == 0)
+  {
+    print_error(ERR_SEQU_EMPTY);
+    return;
+  }
+
+  for (uint8_t i = 0; i < sequ_count; i++)
+  {
+    StimSequence &s = sequ[i];
+
+    // --- Set D188 channel ---
+    uint8_t out = s.channel & 0x0F;
+    PORTF = (PORTF & 0x0F) | (out << 4);
+
+    // --- Set DAC voltage ---
+    uint16_t dac = (s.voltage_mV * 4095UL) / 10000;
+    //int32_t tic = micros(); // make sure we have a recent timestamp for the delayMicroseconds below
+    _gp8403.setOutput(GP8403::OUT_0, dac); // we only use DAC output 0 (might save some time  ~440µs)
+    //_gp8403.setOutput(GP8403::OUT_1, dac);
+    //int32_t toc = micros(); // make sure we have a recent timestamp for the delayMicroseconds below
+    //Serial.println(toc-tic);
+
+    delayMicroseconds(DAC_DEADTIME); // wait until DAC settles
+
+    // --- Set number of pulses ---
+    n_pulse = s.n_stim;
+
+    // --- Run the pulse train ---
+    run_pulse(s.isi_us);
+
+    // Wait until ISR clears busy_d
+    while (busy_d)
+    { /* spin or yield */
+    }
+    delayMicroseconds(s.wait_us);
+  }
+  print_ok(OK);
+}
+
+void processQUERYSEQU()
+{
+  if (sequ_count == 0)
+  {
+    print_error(ERR_SEQU_EMPTY);
+    return;
+  }
+  if (debug_mode > 0)
+  {
+    Serial.println(F("Stored SEQU entries:"));
+    for (uint8_t i = 0; i < sequ_count; i++)
+    {
+      Serial.print(F("#"));
+      Serial.print(i);
+      Serial.print(F(": CH="));
+      Serial.print(sequ[i].channel);
+      Serial.print(F("  V="));
+      Serial.print(sequ[i].voltage_mV);
+      Serial.print(F("mV  n="));
+      Serial.print(sequ[i].n_stim);
+      Serial.print(F("  isi="));
+      Serial.print(sequ[i].isi_us);
+      Serial.print(F("us  iti="));
+      Serial.print(sequ[i].wait_us);
+      Serial.println(F("us"));
+    }
+  }
+  else
+    print_ok(OK);
+}
+
+void processCLEARSEQU()
+{
+  sequ_count = 0;
+  print_ok(OK);
 }
 
 void processMOVE()
@@ -466,31 +660,35 @@ void processMOVE()
   }
 
   arg = s_cmd.next(); // Get the next argument from the SerialCommand object buffer
-  if (arg != NULL)    // As long as it exists, take it
-  {
-
-    us = atol(arg);
-    if (abs(us) < MAX_OSP_TIME)
-    {
-      ramp_temp_prec(us);
-      print_ok(OK_MOVE_PREC);
-    }
-    else
-    {
-      if (debug_mode > 0)
-      {
-        Serial.print(F("Pulse time longer than "));
-        Serial.println(MAX_OSP_TIME);
-        Serial.println(F("using ramp_temp"));
-      }
-      ramp_temp(us / 1000);
-      print_ok(OK_MOVE_SLOW);
-    }
-  }
-  else
+  if (!arg)
   {
     print_error(ERR_NO_PARAM);
     return;
+  }
+
+  New = atol(arg);
+  if (!check_r<int32_t, int32_t>(&us, New, -MAX_MOVE, MAX_MOVE))
+  {
+    print_error(ERR_MOVE_RANGE);
+    return;
+  }
+
+  us = atol(arg);
+  if (abs(us) < MAX_OSP_TIME)
+  {
+    ramp_temp_prec(us);
+    print_ok(OK_MOVE_PREC);
+  }
+  else
+  {
+    if (debug_mode > 0)
+    {
+      Serial.print(F("Pulse time longer than "));
+      Serial.println(MAX_OSP_TIME);
+      Serial.println(F("using ramp_temp"));
+    }
+    ramp_temp(us / 1000);
+    print_ok(OK_MOVE_SLOW);
   }
 }
 
@@ -512,7 +710,7 @@ void processSHOCK()
 // create a train of shocks
 {
   char *arg;
-  uint32_t New, n_stim, isi;
+  uint16_t n_stim, isi;
   if ((busy_d) || (OSP3_INPROGRESS()))
   {
     print_error(ERR_BUSY);
@@ -520,28 +718,26 @@ void processSHOCK()
   }
 
   arg = s_cmd.next(); // Get the next argument from the SerialCommand object buffer
-  if (arg != NULL)    // As long as it existed, take it
-  {
-    New = atol(arg);
-
-    if (!check_range(&n_stim, New, (uint32_t)0, (uint32_t)MAX_DIGI_STIM))
-    {
-      print_error(ERR_SHOCK_RANGE);
-      return;
-    }
-
-    n_pulse = n_stim;
-  }
-  else
+  if (!arg)
   {
     print_error(ERR_NO_PARAM);
     return;
   }
+
+  New = atol(arg);
+  if (!check_r<uint16_t, int32_t>(&n_stim, New, 0, MAX_DIGI_STIM))
+  {
+    print_error(ERR_SHOCK_RANGE);
+    return;
+  }
+
+  n_pulse = n_stim;
+
   arg = s_cmd.next(); // Get the next argument from the SerialCommand object buffer
   if (arg != NULL)
   {
     New = atol(arg);
-    if (!check_range(&isi, New, (uint32_t)MIN_DIGI_ISI, (uint32_t)MAX_DIGI_ISI))
+    if (!check_r<uint16_t, int32_t>(&isi, New, MIN_DIGI_ISI, MAX_DIGI_ISI))
     {
       print_error(ERR_SHOCK_ISI);
       return;
@@ -560,31 +756,8 @@ void processSHOCK()
     Serial.print(isi);
     Serial.println(F(" us"));
   }
-
-  // now prepare Timer3 for PWM
-  cli(); // stop interrupts
-  LOW(SHOCK_PIN);
-  // TCCR3A = 0; necessary?
-  TCCR3B = 0; // same for TCCR3B
-
-  TIFR3 |= (1 << TOV3);  // very important
-  TIMSK3 = (1 << TOIE3); // interrupt when TCNT3 overflows
-
-  TCCR3A = (1 << COM3A1) + (1 << COM3B1) + (1 << WGM31);
-  TCCR3B = (1 << WGM33); // normal mode, phase correct PWM ... don't start yet!
-
-  ICR3 = isi / 8; // ticks
-
-  OCR3A = 12; // pulsewidth 8us * 12 = 96us
-
-  TCNT3 = ICR3 - 1; // initialize counter value
-  // TCNT3 = 0xFFFF; // initialize counter value
-  busy_d = true;
-  c_pulse = 0; // reset pulse counter
+  run_pulse(isi);
   print_ok(OK);
-  TCCR3B |= (1 << CS30) | (1 << CS31); // Now start timer with prescaler 64 (res 8us, max dur = 0xFFFF x 8 = 524ms)
-
-  sei(); // enable global interrupts
 }
 
 void processGETTIME()
@@ -603,7 +776,6 @@ void processINITCTC()
 // initialize CTC storage
 {
   char *arg;
-  uint16_t tmp;
   if ((busy_t) || (OSP1_INPROGRESS()))
   {
     print_error(ERR_BUSY);
@@ -611,38 +783,34 @@ void processINITCTC()
   }
 
   arg = s_cmd.next(); // Get the next argument from the SerialCommand object buffer
-  if (arg != NULL)    // As long as it existed, take it
+  if (!arg)
   {
+    print_error(ERR_NO_PARAM);
+    return;
+  }
 
-    reset_ctc(); // ALWAYS reset all ctc_data vars (including flushing the loaded ctc_data itself) when initializing
+  reset_ctc(); // ALWAYS reset all ctc_data vars (including flushing the loaded ctc_data itself) when initializing
 
-    tmp = atoi(arg);
+  New = atol(arg);
+  if (check_r<uint16_t, int32_t>(&ctc_bin_ms, New, 1, 500))
+  {
+    print_ok(OK);
 
-    if (check_range(&ctc_bin_ms, tmp, (uint16_t)1, (uint16_t)500))
+    bit_width = bits_required(ctc_bin_ms);                  // determine how many bits we need to store ctc_bin_ms
+    bs_max_count = (uint16_t)((CTC_MAX_N * 8) / bit_width); // determine how many entries we can store given bit_width
+    bs_init(&bs, ctc_data, sizeof(ctc_data), bit_width);    // initialize bitstream
+    if (debug_mode > 0)
     {
-      print_ok(OK);
-
-      bit_width = bits_required(ctc_bin_ms);                  // determine how many bits we need to store ctc_bin_ms
-      bs_max_count = (uint16_t)((CTC_MAX_N * 8) / bit_width); // determine how many entries we can store given bit_width
-      bs_init(&bs, ctc_data, sizeof(ctc_data), bit_width);    // initialize bitstream
-      if (debug_mode > 0)
-      {
-        Serial.print(F("CTC bits:  "));
-        Serial.println(bit_width);
-        Serial.print(F("CTC max entries:  "));
-        Serial.println(bs_max_count);
-      }
-    }
-    else
-    {
-      reset_ctc();
-      print_error(ERR_CTC_BIN_WIDTH);
-      return;
+      Serial.print(F("CTC bits:  "));
+      Serial.println(bit_width);
+      Serial.print(F("CTC max entries:  "));
+      Serial.println(bs_max_count);
     }
   }
   else
   {
-    print_error(ERR_NO_PARAM);
+    reset_ctc();
+    print_error(ERR_CTC_BIN_WIDTH);
     return;
   }
 }
@@ -651,27 +819,24 @@ void processMAXCTC()
 // return the maximum number of entries in the CTC
 {
   char *arg;
-  uint16_t tmp, max_count, bin_ms;
+  uint16_t max_count, bin_ms;
   uint8_t bitw;
   arg = s_cmd.next(); // Get the next argument from the SerialCommand object buffer
-  if (arg != NULL)    // As long as it existed, take it
+  if (!arg)
   {
-    tmp = atoi(arg);
-    if (check_range(&bin_ms, tmp, (uint16_t)1, (uint16_t)500))
-    {
-      bitw = bits_required(bin_ms);                   // determine how many bits we need to store ctc_bin_ms
-      max_count = (uint16_t)((CTC_MAX_N * 8) / bitw); // determine how many entries we can store given bit_width
-      Serial.println(max_count - 1);
-    }
-    else
-    {
-      print_error(ERR_CTC_BIN_WIDTH);
-      return;
-    }
+    print_error(ERR_NO_PARAM);
+    return;
+  }
+  New = atol(arg);
+  if (check_r<uint16_t, int32_t>(&bin_ms, New, 1, 500))
+  {
+    bitw = bits_required(bin_ms);                   // determine how many bits we need to store ctc_bin_ms
+    max_count = (uint16_t)((CTC_MAX_N * 8) / bitw); // determine how many entries we can store given bit_width
+    Serial.println(max_count - 1);
   }
   else
   {
-    print_error(ERR_NO_PARAM);
+    print_error(ERR_CTC_BIN_WIDTH);
     return;
   }
 }
@@ -679,7 +844,7 @@ void processLOADCTC()
 // add an item to the CTC
 {
   char *arg;
-  int32_t myarg, t_move_ms;
+  int32_t t_move_ms;
   uint16_t repeat = 1; // default: write once
 
   if ((busy_t) || (OSP1_INPROGRESS()))
@@ -697,19 +862,17 @@ void processLOADCTC()
 
   // get segment duration
   arg = s_cmd.next(); // Get the next argument from the SerialCommand object buffer
-  if (arg != NULL)    // As long as it existed, take it
-  {
-    myarg = atol(arg);
-    if (!check_range_abs(&t_move_ms, myarg, (int32_t)0, (int32_t)ctc_bin_ms))
-    {
-      reset_ctc();
-      print_error(ERR_CTC_PULSE_WIDTH);
-      return;
-    }
-  }
-  else
+  if (!arg)
   {
     print_error(ERR_NO_PARAM);
+    return;
+  }
+
+  New = atol(arg);
+  if (!check_r<int32_t, int32_t>(&t_move_ms, New, -(int32_t)ctc_bin_ms, (int32_t)ctc_bin_ms))
+  {
+    reset_ctc();
+    print_error(ERR_CTC_PULSE_WIDTH);
     return;
   }
 
@@ -717,8 +880,8 @@ void processLOADCTC()
   arg = s_cmd.next(); // Get the next argument from the SerialCommand object buffer
   if (arg != NULL)    // As long as it existed, take it
   {
-    myarg = atol(arg);
-    if (!check_range(&repeat, (uint16_t)myarg, (uint16_t)1, bs_max_count))
+    New = atol(arg);
+    if (!check_r<uint16_t, int32_t>(&repeat, New, 1, bs_max_count))
     {
       print_error(ERR_CTC_FULL);
       reset_ctc();
@@ -736,8 +899,8 @@ void processLOADCTC()
   for (uint16_t r = 0; r < repeat; r++)
   {
     bs_write(&bs, t_move_ms);
-    print_ok(OK);
   }
+  print_ok(OK);
 }
 
 void processQUERYCTC()
@@ -823,21 +986,9 @@ void processEXECCTC()
   TCCR1A = (1 << COM1A1) + (1 << COM1B1) + (1 << WGM11);
   TCCR1B = (1 << WGM13); // normal mode, phase correct PWM ... don't start yet!
 
-  /* Possible edits for Fast PWM mode 14
-  // Fast PWM mode 14, ICR1 = TOP
-  TCCR1A = (1 << COM1A1) | (1 << COM1B1) | (1 << WGM11);
-  TCCR1B = (1 << WGM13) | (1 << WGM12);
-  */
-
   ctc_bin_ticks = SCK / 2 / PWMPRESCALER * (int32_t)ctc_bin_ms / 1000;
   ICR1 = ctc_bin_ticks + 1; // important to set this BEFORE OCR1A/B
   // +1 hack to allow a pulse width equal ctc_bin_ms (actually ctc_bin_ms is 8 us longer)
-
-  /*
-  // compute TOP
-  ctc_bin_ticks = SCK / PWMPRESCALER * (int32_t)ctc_bin_ms / 1000;
-  ICR1 = ctc_bin_ticks;
-  */
 
   // get the first pulse
   bs.bitpos = 0;            // reset bitpos to beginning
@@ -857,9 +1008,6 @@ void processEXECCTC()
 
   TCNT1 = ICR1 - 1; // Should not be zero, because then we will miss first entry as ISR "eats up" ctc_data value
   // ICR1-1 means low latency as OCR1A/B will be updated at ICR1
-  /*
-  TCNT1 = 0; //for fast PWM
-  */
 
   busy_t = true;
 
@@ -1021,7 +1169,7 @@ ISR(TIMER1_OVF_vect) // for CTC
     TCCR1B = 0;
     LOW(DOWN_PIN);           // set ports low
     LOW(UP_PIN);             //
-    TCNT1 = 0;               // does not help to do a MOVE after EXECCTCPWM...
+    TCNT1 = 0;               //
     TIMSK1 &= ~(1 << TOIE1); // can we disable interrupt when TCNT1 overflows in ISR ??? -> YES
     busy_t = false;
     bs.bitpos = saved_pos; // reset bitpos to saved position (i.e. without zero pulse)
@@ -1031,9 +1179,6 @@ ISR(TIMER1_OVF_vect) // for CTC
 
   int16_t pulse_ms = bs_read(&bs);
   int32_t pulse_tick = SCK / 2 / PWMPRESCALER * (int32_t)pulse_ms / 1000;
-
-  // ** FAST PWM: NO division by 2 ***
-  //  int32_t pulse_tick = (SCK / PWMPRESCALER) * (int32_t)pulse_ms / 1000;
 
   if (pulse_tick > 0)
   {
@@ -1047,23 +1192,19 @@ ISR(TIMER1_OVF_vect) // for CTC
   }
 }
 
-ISR(TIMER3_OVF_vect) // for digitimer shocks
+ISR(TIMER3_COMPA_vect) // works, the only thing is that the first pulse is only 8µs ...
 {
-  // we simply count the number of pulses and then stop
-  // ISR is called when counter has finished i.e. pulse has been generated
-
-  if (c_pulse == n_pulse - 1) // almost done
-    OCR3A = 0;                // create null pulse
-  // as we fire ISR on TOP, we cut the last pulse in half therefore we do one more and set the last one to 0
-
-  if (c_pulse == n_pulse) // done
+  if (c_pulse == (2 * (n_pulse)) - 2) // bc 2 ISR per pulse (up/dwn) but bc OCRA is updated at TOP,
+                                      // first only gets a down ISR (-1) and we count from 0 (-2)
   {
-    TCCR3A = 0; // clear all Timer/PWM functionality
+    // Stop timer clock
+    TCCR3A = 0;
     TCCR3B = 0;
-
     c_pulse = 0;
-    TCNT3 = 0;               //
-    TIMSK3 &= ~(1 << TOIE3); // can we disable interrupt when TCNT1 overflows in ISR ??? -> YES
+    TCNT3 = 0; //
+    OCR3A = 0;
+    // Disable interrupt
+    TIMSK3 &= ~(1 << OCIE3A);
     busy_d = false;
   }
   c_pulse++;
@@ -1072,6 +1213,33 @@ ISR(TIMER3_OVF_vect) // for digitimer shocks
 //***********************************************************************************
 //*********** helper functions
 //***********************************************************************************
+
+void run_pulse(uint32_t isi)
+{
+  // now prepare Timer3 for phase correct PWM
+  cli(); // stop interrupts
+  LOW(SHOCK_PIN);
+  TCCR3A = 0; // necessary?
+  TCCR3B = 0; // same for TCCR3B
+
+  TIFR3 |= (1 << OCF3A);   // clear pending compare-match A flag
+  TIMSK3 |= (1 << OCIE3A); // enable OCR3A interrupt
+
+  TCCR3A = (1 << COM3A1) + (1 << COM3A0) + (1 << WGM31);
+  TCCR3B = (1 << WGM33); // normal mode, phase correct PWM ... don't start yet!
+
+  ICR3 = isi / 8; // ticks
+
+  // OCR3A = ICR3 - 12; // pulsewidth 8us * 12 = 96us
+  OCR3A = ICR3 - 2; // pulsewidth 8us * 2 = 16us (or 8µs with the first pulse)
+
+  TCNT3 = ICR3; // initialize counter value to get first pulse immediately (compare match will happen at ICR3)
+  busy_d = true;
+  c_pulse = 0;                         // reset pulse counter
+  TCCR3B |= (1 << CS30) | (1 << CS31); // Now start timer with prescaler 64 (res 8us, max dur = 0xFFFF x 8 = 524ms)
+
+  sei(); // enable global interrupts
+}
 
 void print_error(int8_t error_code)
 {
@@ -1154,7 +1322,7 @@ void display_help()
   Serial.println(F("MOVE;XX       - Move temp up/down for XX us"));
   Serial.println(F("START         - Send 40ms TTL pulse to start thermode"));
   Serial.println(F("INITCTC;xx    - Initialize complex time courses (ctc_data) with cycle xx in ms (500 max)"));
-    Serial.print(F("LOADCTC;xx;yy - add pulse to ctc_data queue (xx in ms) -xx means temperature decrease, max "));
+  Serial.print(F("LOADCTC;xx;yy - add pulse to ctc_data queue (xx in ms) -xx means temperature decrease, max "));
   Serial.print(CTC_MAX_N);
   Serial.println(F(" items. yy=repeat count, default 1)"));
 
@@ -1169,7 +1337,20 @@ void display_help()
   Serial.println(F("KILL_D        - stop activity of digitimer"));
   Serial.println(F("SHOCK;nn(;yy) - Digitimer stimuli number (nn) @interval 1100us OR additionally specify interval between pulses (yy) in us (>1000) "));
   Serial.println(F("D188;xx       - select D188 channel xx (1..8)"));
-  Serial.println(F("SETV;xx       - set DA output voltage xx (0..10000 mV)"));
+  Serial.println(F("SETV;xxxxxx   - set DA output voltage xx (0..10000 mV)"));
+  Serial.println(F("ADDSEQU;ch;V;n;isi;wait"));
+  Serial.println(F("               - add a sequence step:"));
+  Serial.println(F("                 ch   = D188 channel (0..8)"));
+  Serial.println(F("                 V    = voltage in mV (0..10000)"));
+  Serial.println(F("                 n    = number of shocks (0..65535)"));
+    Serial.print(F("                 isi  = inter-shock interval in us (>= "));
+  Serial.print(MIN_DIGI_ISI);
+  Serial.println(F(")"));
+  Serial.println(F("                 wait = wait time after this sequence in us (0..65535)"));
+
+  Serial.println(F("RUNSEQU        - execute all stored sequences in order"));
+  Serial.println(F("QUERYSEQU      - list all stored sequences"));
+  Serial.println(F("CLEARSEQU      - remove all stored sequences"));
 }
 
 void display_error_codes()

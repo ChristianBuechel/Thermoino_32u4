@@ -1,6 +1,7 @@
 {
-    "port": "COM15",
-    "board": "arduino:avr:leonardo",
+    "port": "COM10",
+    "board": "arduino:avr:mega",
     "sketch": "Thermoino_32u4.ino",
-    "programmer": "arduinoisp"
+    "programmer": "avrisp",
+    "configuration": "cpu=atmega2560"
 }
